@@ -1,0 +1,46 @@
+{
+  "name": "shuvquota",
+  "version": "2.0.0",
+  "description": "Self-managed multi-provider quota monitor with a responsive terminal UI",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuv1337/shuvquota.git"
+  },
+  "homepage": "https://github.com/shuv1337/shuvquota#readme",
+  "bugs": {
+    "url": "https://github.com/shuv1337/shuvquota/issues"
+  },
+  "files": [
+    "shuvquota.js",
+    "shuvquota-server.js",
+    "lib/",
+    "web/",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "cq": "./shuvquota.js",
+    "sq": "./shuvquota.js",
+    "shuvquota": "./shuvquota.js",
+    "shuvquota-server": "./shuvquota-server.js"
+  },
+  "scripts": {
+    "start": "node shuvquota.js",
+    "app": "node shuvquota-server.js",
+    "test": "bun test",
+    "preflight": "node scripts/preflight.js",
+    "release:patch": "bun pm version patch",
+    "release:minor": "bun pm version minor",
+    "release:major": "bun pm version major",
+    "release:pack": "bun pm pack --dry-run",
+    "release:publish": "bun publish --access public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

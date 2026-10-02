@@ -1,0 +1,10 @@
+ Co…  pers…  ✕ HTTP 401 unaut…
+      work   5h    100%
+             wk      7%
+ Cl…  main…  sess   64%
+             wk     41%
+             Son…   --%
+ Su…         ✕ token refresh …
+ An…  pend…  ⠋ loading…
+      日本…  5h     88%
+             wk     15%
