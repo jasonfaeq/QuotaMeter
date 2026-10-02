@@ -56,7 +56,8 @@ describe("terminal lifecycle", () => {
 	});
 	test("key mapping includes explicit all-provider selection", () => {
 		expect(keyAction("1")).toBe("all");
-		expect(keyAction("5")).toBe("antigravity");
+		expect(keyAction("4")).toBe("antigravity");
+		expect(keyAction("5")).toBe(null);
 		expect(keyAction("", { ctrl: true, name: "c" })).toBe("quit");
 		expect(keyAction("", { name: "pagedown" })).toBe("pageDown");
 	});

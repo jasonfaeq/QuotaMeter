@@ -1,5 +1,5 @@
 /**
- * Tests for the shared v2 quota snapshot model.
+ * Tests for the shared quota snapshot model.
  * Run with: bun test test/snapshot.test.js
  */
 
@@ -20,7 +20,6 @@ import {
 	normalizeClaudeAccount,
 	normalizeCodexAccount,
 	normalizeGenericAccount,
-	normalizeGrokAccount,
 	normalizeWindowValues,
 	redactPublicText,
 	safePublicError,
@@ -73,7 +72,7 @@ describe("maskEmail", () => {
 
 describe("redactPublicText", () => {
 	test.each([
-		["absolute POSIX path", "failed reading /home/shuv/.codex/auth.json", "failed reading [redacted]"],
+		["absolute POSIX path", "failed reading /home/user/.codex/auth.json", "failed reading [redacted]"],
 		["home-relative path", "see ~/.claude/.credentials.json now", "see [redacted] now"],
 		["windows path", "at C:\\Users\\shuv\\creds.json here", "at [redacted] here"],
 		["url", "posted to https://api.example.com/v1/usage?key=abc", "posted to [redacted]"],
@@ -128,7 +127,7 @@ describe("safePublicError", () => {
 
 describe("sanitizeErrorText", () => {
 	test("keeps internal errors specific but strips paths and tokens", () => {
-		const message = "ENOENT reading /home/shuv/.codex/auth.json";
+		const message = "ENOENT reading /home/user/.codex/auth.json";
 		expect(sanitizeErrorText(message)).toBe("ENOENT reading [redacted]");
 	});
 
@@ -266,7 +265,7 @@ describe("normalizeCodexAccount", () => {
 });
 
 describe("normalizeClaudeAccount", () => {
-	test("normalizes legacy ratio windows with their default lengths", () => {
+	test("normalizes ratio-form windows with their default lengths", () => {
 		const snapshot = normalizeClaudeAccount(
 			{ label: "personal" },
 			{
@@ -326,47 +325,6 @@ describe("normalizeClaudeAccount", () => {
 		const snapshot = normalizeClaudeAccount({ label: "work" }, { success: false }, NOW);
 		expect(snapshot.status).toBe("error");
 		expect(snapshot.error).toBe("Quota data unavailable");
-	});
-});
-
-describe("normalizeGrokAccount", () => {
-	const result = {
-		tier: 5,
-		usage: {
-			creditUsagePercent: 25,
-			period: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-31T00:00:00.000Z" },
-			products: [{ product: "grok_code", usagePercent: 95 }],
-		},
-	};
-
-	test("derives the period length and applies it to every window", () => {
-		const snapshot = normalizeGrokAccount({ label: "main" }, result, NOW);
-		expect(windowById(snapshot, "credits")).toEqual({
-			id: "credits",
-			label: "Credits",
-			percentUsed: 25,
-			percentRemaining: 75,
-			resetsAt: "2026-01-31T00:00:00.000Z",
-			windowSeconds: 2592000,
-		});
-		expect(windowById(snapshot, "product-grok-code")).toMatchObject({
-			label: "Grok Code",
-			percentUsed: 95,
-			percentRemaining: 5,
-		});
-	});
-
-	test("labels the tier and keeps a nearly exhausted product window ok", () => {
-		const snapshot = normalizeGrokAccount({ label: "main" }, result, NOW);
-		expect(snapshot.plan).toBe("SuperGrok Heavy");
-		expect(snapshot.status).toBe("ok");
-		expect(windowById(snapshot, "product-grok-code").percentRemaining).toBe(5);
-	});
-
-	test("converts a fetch error into an error account", () => {
-		const snapshot = normalizeGrokAccount({ label: "main" }, { error: "HTTP 500" }, NOW);
-		expect(snapshot.status).toBe("error");
-		expect(snapshot.error).toBe("HTTP 500");
 	});
 });
 
@@ -442,7 +400,7 @@ describe("ACCOUNT_NORMALIZERS", () => {
 
 	test("names providers for display", () => {
 		expect(defaultProviderName("codex")).toBe("Codex");
-		expect(defaultProviderName("grok")).toBe("SuperGrok");
+		expect(defaultProviderName("antigravity")).toBe("Antigravity");
 		expect(defaultProviderName("some_vendor")).toBe("Some Vendor");
 	});
 });
@@ -457,7 +415,7 @@ describe("coerceAccountSnapshot", () => {
 			windows: [{ id: "session", label: "Session", percentRemaining: 40, accessToken: "sk_" + "live_x" }],
 			extras: [{ label: "Banked", value: "2", secret: "nope" }],
 			accessToken: "sk_" + "live_abcdefghijklmnopqrstuvwx",
-			credentialsPath: "/home/shuv/.codex/auth.json",
+			credentialsPath: "/home/user/.codex/auth.json",
 			accountId: "acct_12345",
 		});
 		expect(Object.keys(coerced).sort()).toEqual(
@@ -469,7 +427,7 @@ describe("coerceAccountSnapshot", () => {
 		expect(Object.keys(coerced.extras[0]).sort()).toEqual(["id", "label", "value"]);
 		expect(JSON.stringify(coerced)).not.toContain("sk_live");
 		expect(JSON.stringify(coerced)).not.toContain("acct_12345");
-		expect(JSON.stringify(coerced)).not.toContain("/home/shuv");
+		expect(JSON.stringify(coerced)).not.toContain("/home/user");
 	});
 
 	test("derives the percent pair and keeps a nearly exhausted window ok", () => {
@@ -542,7 +500,7 @@ describe("skeleton and error accounts", () => {
 	test("error accounts redact the failure text", () => {
 		const snapshot = createErrorAccountSnapshot(
 			{ label: "work" },
-			new Error("ENOENT /home/shuv/.codex/auth.json"),
+			new Error("ENOENT /home/user/.codex/auth.json"),
 		);
 		expect(snapshot.status).toBe("error");
 		expect(snapshot.error).toBe("ENOENT [redacted]");
@@ -572,7 +530,7 @@ describe("buildSnapshot", () => {
 			complete: true,
 		});
 		expect(snapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION);
-		expect(SNAPSHOT_SCHEMA_VERSION).toBe(2);
+		expect(SNAPSHOT_SCHEMA_VERSION).toBe(1);
 		expect(snapshot.summary).toEqual({
 			providerCount: 2,
 			accountCount: 3,
@@ -598,8 +556,8 @@ describe("buildSnapshot", () => {
 	});
 
 	test("defaults provider names from the id", () => {
-		expect(buildProviderSnapshot({ id: "grok" }).name).toBe("SuperGrok");
-		expect(buildProviderSnapshot({ id: "grok", name: "Custom" }).name).toBe("Custom");
+		expect(buildProviderSnapshot({ id: "antigravity" }).name).toBe("Antigravity");
+		expect(buildProviderSnapshot({ id: "antigravity", name: "Custom" }).name).toBe("Custom");
 	});
 
 	test("counts loading accounts only when skeletons are allowed through", () => {
@@ -624,15 +582,15 @@ describe("toPublicSnapshot", () => {
 					name: "Codex",
 					accounts: [
 						{
-							label: "ada.lovelace@example.com on /home/shuv/work",
+							label: "ada.lovelace@example.com on /home/user/work",
 							email: "ada.lovelace@example.com",
-							plan: "Pro /home/shuv/plan.json",
+							plan: "Pro /home/user/plan.json",
 							status: "error",
-							error: "HTTP 401 refreshing /home/shuv/.codex/auth.json with sk_" + "live_abcdefghijklmnopqrstuvwx",
+							error: "HTTP 401 refreshing /home/user/.codex/auth.json with sk_" + "live_abcdefghijklmnopqrstuvwx",
 							windows: [
 								{
 									id: "session",
-									label: "Session /home/shuv/x",
+									label: "Session /home/user/x",
 									percentRemaining: 40,
 									resetsAt: "2026-01-10T05:00:00.000Z",
 									windowSeconds: 18000,
@@ -642,7 +600,7 @@ describe("toPublicSnapshot", () => {
 							extras: [{ id: "banked-resets", label: "Banked resets", value: "2" }],
 						},
 					],
-					error: "discovery failed reading /home/shuv/.codex",
+					error: "discovery failed reading /home/user/.codex",
 				},
 			],
 			{ startedAt: NOW, generatedAt: NOW, complete: true },
@@ -673,7 +631,7 @@ describe("toPublicSnapshot", () => {
 	test("leaks no address, path, or token anywhere in the projection", () => {
 		const json = JSON.stringify(toPublicSnapshot(hostileSnapshot()));
 		expect(json).not.toContain("ada.lovelace@example.com");
-		expect(json).not.toContain("/home/shuv");
+		expect(json).not.toContain("/home/user");
 		expect(json).not.toContain("sk_live");
 	});
 
@@ -696,7 +654,7 @@ describe("toPublicSnapshot", () => {
 			providers: [
 				{
 					id: "codex",
-					configPath: "/home/shuv/.codex",
+					configPath: "/home/user/.codex",
 					accounts: [{ label: "work", accountId: "acct_12345", refreshToken: "rt_abcdefghijklmnopqrstuvwx" }],
 				},
 			],
@@ -713,7 +671,7 @@ describe("toPublicSnapshot", () => {
 		const json = JSON.stringify(public_);
 		expect(json).not.toContain("acct_12345");
 		expect(json).not.toContain("rt_abcdefghijklmnopqrstuvwx");
-		expect(json).not.toContain("/home/shuv");
+		expect(json).not.toContain("/home/user");
 	});
 
 	test("never publishes a generatedAt for an in-flight frame", () => {
@@ -755,7 +713,7 @@ describe("toPublicSnapshot", () => {
 });
 
 describe("ACCOUNT_STATUSES", () => {
-	test("is exactly the three v2 statuses", () => {
+	test("is exactly the three statuses", () => {
 		expect([...ACCOUNT_STATUSES]).toEqual(["loading", "ok", "error"]);
 	});
 
@@ -772,7 +730,6 @@ describe("ACCOUNT_STATUSES", () => {
 			coerceAccountSnapshot({ windows: [] }),
 			normalizeCodexAccount({}, { usage: { rate_limit: { primary_window: { used_percent: 99 } } } }, NOW),
 			normalizeClaudeAccount({}, { usage: { five_hour: { utilization: 0.99 } } }, NOW),
-			normalizeGrokAccount({}, { usage: { creditUsagePercent: 99 } }, NOW),
 			normalizeAntigravityAccount(
 				{},
 				{ usage: { groups: [{ id: "gemini", buckets: [{ bucketId: "5h", window: "5h", percentRemaining: 1 }] }] } },
@@ -784,7 +741,7 @@ describe("ACCOUNT_STATUSES", () => {
 			expect(ACCOUNT_STATUSES).toContain(account.status);
 		}
 		// None of the above is an error case, so a 1%-remaining account is `ok`.
-		expect(produced.slice(2).filter(account => account.status === "ok")).toHaveLength(6);
+		expect(produced.slice(2).filter(account => account.status === "ok")).toHaveLength(5);
 	});
 });
 
@@ -797,10 +754,10 @@ describe("toDisplaySnapshot", () => {
 					id: "codex",
 					accounts: [
 						{
-							label: "work /home/shuv/x",
+							label: "work /home/user/x",
 							email: "ada.lovelace@example.com",
 							status: "ok",
-							error: "HTTP 401 reading /home/shuv/.codex/auth.json",
+							error: "HTTP 401 reading /home/user/.codex/auth.json",
 							windows: [{ id: "session", label: "Session", percentRemaining: 40 }],
 						},
 					],
@@ -827,7 +784,7 @@ describe("toDisplaySnapshot", () => {
 			["email", "error", "extras", "label", "plan", "status", "windows"],
 		);
 		const json = JSON.stringify({ ...account, email: null });
-		expect(json).not.toContain("/home/shuv");
+		expect(json).not.toContain("/home/user");
 	});
 
 	test("only an exact true widens it", () => {
@@ -854,8 +811,8 @@ describe("context-aware known-secret scrubbing", () => {
 		expect(account.windows[0].percentRemaining).toBe(50);
 	});
 	test("keeps the enrollment remedy in a public-safe error", () => {
-		expect(safePublicError("Token expired for private-id; run: cq grok add"))
-			.toBe("Authentication required; run cq grok add");
+		expect(safePublicError("Token expired for private-id; run: qm antigravity add"))
+			.toBe("Authentication required; run qm antigravity add");
 	});
 	test("scrubs embedded accountId and accessToken from internal normalized accounts", () => {
 		const account = {
@@ -934,7 +891,7 @@ describe("context-aware known-secret scrubbing", () => {
 			providers: [
 				{
 					id: "codex",
-					configPath: "/home/shuv/.codex",
+					configPath: "/home/user/.codex",
 					accounts: [
 						{
 							label: "work acc_123",

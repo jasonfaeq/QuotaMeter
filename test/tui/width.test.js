@@ -1,6 +1,6 @@
 /**
  * Cell-width helpers: ANSI/control stripping, CJK, combining marks, ZWJ emoji,
- * bounded truncation. Imports lib/tui/width.js directly (plan §3.3).
+ * bounded truncation. Imports lib/tui/width.js directly.
  */
 
 import { describe, test, expect } from "bun:test";

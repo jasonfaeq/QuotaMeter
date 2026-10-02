@@ -1,10 +1,10 @@
 /**
- * Legacy JWT utilities tests migrated from shuvquota.test.js
- * Run with: bun test test/legacy/jwt.test.js
+ * JWT utility tests.
+ * Run with: bun test test/jwt.test.js
  */
 
 import { describe, expect, test } from "bun:test";
-import { decodeJWT, extractAccountId } from "../../lib/jwt.js";
+import { decodeJWT, extractAccountId } from "../lib/jwt.js";
 
 function createMockAccessToken(accountId, email = "test@example.com", planType = "plus") {
 	const header = { alg: "RS256", typ: "JWT" };

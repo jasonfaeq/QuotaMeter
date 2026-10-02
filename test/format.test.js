@@ -1,6 +1,6 @@
 /**
- * Legacy format, display, CLI constants, and metadata tests migrated from shuvquota.test.js
- * Run with: bun test test/legacy/format.test.js
+ * Formatting, display, CLI constant, and package metadata tests.
+ * Run with: bun test test/format.test.js
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -12,21 +12,17 @@ import {
 	PRIMARY_CMD,
 	USAGE_URL,
 	RESET_CREDITS_URL,
-	REMOVED_NAMESPACES,
-	REMOVED_NAMESPACE_EXIT_CODE,
-	V1_COMPAT_COMMAND,
-} from "../../lib/constants.js";
+} from "../lib/constants.js";
 
 import {
 	fetchResetCredits,
 	fetchUsage,
 	mergeResetCredits,
-} from "../../lib/codex-usage.js";
+} from "../lib/codex-usage.js";
 
 import {
 	formatBankedResetExpiration,
 	formatExpiryStatus,
-	formatRemovedNamespaceError,
 	formatTokenCount,
 	normalizePercentUsed,
 	parseBankedResetCredits,
@@ -38,24 +34,23 @@ import {
 	isCodexWeeklyWindow,
 	formatResetTime,
 	formatResetAt,
-	formatGrokPeriodReset,
 	formatAntigravityReset,
-} from "../../lib/display.js";
+} from "../lib/display.js";
 
 import {
 	buildChecks,
 	checkFilesArrayExists,
 	checkPackageName,
 	checkRequiredFiles,
-} from "../../scripts/preflight.js";
+} from "../scripts/preflight.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI constants tests
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("PRIMARY_CMD constant", () => {
-	test("equals 'shuvquota'", () => {
-		expect(PRIMARY_CMD).toBe("shuvquota");
+	test("equals 'quotameter'", () => {
+		expect(PRIMARY_CMD).toBe("quotameter");
 	});
 
 	test("Codex usage endpoints point to the wham backend", () => {
@@ -150,27 +145,6 @@ describe("Codex banked reset usage", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Removed-namespace guard (v2 Phase 1)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("removed namespace guard", () => {
-	test("REMOVED_NAMESPACES lists exactly the dropped providers", () => {
-		expect([...REMOVED_NAMESPACES].sort()).toEqual(["factory", "opencode-go", "synthetic"]);
-		expect(REMOVED_NAMESPACE_EXIT_CODE).toBe(2);
-		expect(V1_COMPAT_COMMAND).toBe("npx shuvquota@1");
-	});
-
-	test("formatRemovedNamespaceError names the namespace and the v1 invocation", () => {
-		expect(formatRemovedNamespaceError("factory")).toBe(
-			`Error: '${PRIMARY_CMD} factory' was removed in v2. Use '${V1_COMPAT_COMMAND} factory' instead.`
-		);
-		expect(formatRemovedNamespaceError("synthetic", ["remove", "default"])).toBe(
-			`Error: '${PRIMARY_CMD} synthetic' was removed in v2. Use '${V1_COMPAT_COMMAND} synthetic remove default' instead.`
-		);
-	});
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // package.json metadata validation tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -178,23 +152,23 @@ describe("package.json metadata", () => {
 	let pkg;
 
 	beforeEach(() => {
-		pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../package.json"), "utf-8"));
+		pkg = JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf-8"));
 	});
 
-	test("has name equal to 'shuvquota'", () => {
-		expect(pkg.name).toBe("shuvquota");
+	test("has name equal to 'quotameter'", () => {
+		expect(pkg.name).toBe("quotameter");
 	});
 
 	test("has files array defined", () => {
 		expect(Array.isArray(pkg.files)).toBe(true);
 	});
 
-	test("files array includes 'shuvquota.js'", () => {
-		expect(pkg.files).toContain("shuvquota.js");
+	test("files array includes 'quotameter.js'", () => {
+		expect(pkg.files).toContain("quotameter.js");
 	});
 
-	test("files array includes the shuvquota PWA", () => {
-		expect(pkg.files).toContain("shuvquota-server.js");
+	test("files array includes the quotameter PWA", () => {
+		expect(pkg.files).toContain("quotameter-server.js");
 		expect(pkg.files).toContain("web/");
 	});
 
@@ -202,24 +176,23 @@ describe("package.json metadata", () => {
 		expect(pkg.files).toContain("README.md");
 	});
 
-	test("bin includes 'shuvquota' command", () => {
-		expect(pkg.bin).toHaveProperty("shuvquota");
-		expect(pkg.bin["shuvquota"]).toBe("./shuvquota.js");
+	test("bin includes 'quotameter' command", () => {
+		expect(pkg.bin).toHaveProperty("quotameter");
+		expect(pkg.bin["quotameter"]).toBe("./quotameter.js");
 	});
 
-	test("bin includes 'cq' alias", () => {
-		expect(pkg.bin).toHaveProperty("cq");
-		expect(pkg.bin["cq"]).toBe("./shuvquota.js");
+	test("bin includes 'qm' alias", () => {
+		expect(pkg.bin).toHaveProperty("qm");
+		expect(pkg.bin["qm"]).toBe("./quotameter.js");
 	});
 
-	test("bin includes 'sq' alias", () => {
-		expect(pkg.bin).toHaveProperty("sq");
-		expect(pkg.bin["sq"]).toBe("./shuvquota.js");
+	test("credits JasonFaeq as the author", () => {
+		expect(pkg.author).toBe("JasonFaeq");
 	});
 
-	test("bin includes 'shuvquota-server' app command", () => {
-		expect(pkg.bin).toHaveProperty("shuvquota-server");
-		expect(pkg.bin["shuvquota-server"]).toBe("./shuvquota-server.js");
+	test("bin includes 'quotameter-server' app command", () => {
+		expect(pkg.bin).toHaveProperty("quotameter-server");
+		expect(pkg.bin["quotameter-server"]).toBe("./quotameter-server.js");
 	});
 
 	test("has repository field", () => {
@@ -243,7 +216,7 @@ describe("package.json metadata", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("CI workflow", () => {
-	const workflowPath = join(import.meta.dir, "../../.github", "workflows", "ci.yml");
+	const workflowPath = join(import.meta.dir, "../.github", "workflows", "ci.yml");
 	let workflow;
 
 	beforeEach(() => {
@@ -272,10 +245,10 @@ describe("CI workflow", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("preflight checks", () => {
-	test("fails if name is not shuvquota", () => {
+	test("fails if name is not quotameter", () => {
 		const result = checkPackageName({ name: "wrong-name" });
 		expect(result.pass).toBe(false);
-		expect(result.message).toContain("expected 'shuvquota'");
+		expect(result.message).toContain("expected 'quotameter'");
 	});
 
 	test("fails if files array is missing", () => {
@@ -287,14 +260,14 @@ describe("preflight checks", () => {
 	test("fails if required files are missing", () => {
 		const result = checkRequiredFiles({ files: ["README.md"] });
 		expect(result.pass).toBe(false);
-		expect(result.message).toContain("shuvquota.js");
-		expect(result.message).toContain("shuvquota-server.js");
+		expect(result.message).toContain("quotameter.js");
+		expect(result.message).toContain("quotameter-server.js");
 		expect(result.message).toContain("web/");
 		expect(result.message).toContain("LICENSE");
 	});
 
 	test("passes with correct configuration", () => {
-		const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../package.json"), "utf-8"));
+		const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf-8"));
 		const checks = buildChecks(pkg, { skipGit: true });
 		const allPass = checks.every(check => check.pass);
 		expect(allPass).toBe(true);
@@ -368,7 +341,7 @@ describe("normalizePercentUsed", () => {
 		expect(normalizePercentUsed(1)).toBe(1);
 	});
 
-	test("converts legacy fractional values in (0, 1) to percentage points", () => {
+	test("converts fractional ratio values in (0, 1) to percentage points", () => {
 		expect(normalizePercentUsed(0.1)).toBe(10);
 	});
 });
@@ -523,12 +496,7 @@ describe("display formatting helpers", () => {
 		expect(formatResetAt(future)).toContain("resets");
 	});
 
-	test("formatGrokPeriodReset and formatAntigravityReset", () => {
-		expect(formatGrokPeriodReset(null)).toBe("");
-		expect(formatGrokPeriodReset("invalid")).toBe("");
-		const grokFuture = new Date(Date.now() + 7200 * 1000).toISOString();
-		expect(formatGrokPeriodReset(grokFuture)).toContain("resets");
-
+	test("formatAntigravityReset", () => {
 		expect(formatAntigravityReset(null)).toBe("");
 		expect(formatAntigravityReset("invalid")).toBe("");
 		const agFuture = new Date(Date.now() + 7200 * 1000).toISOString();

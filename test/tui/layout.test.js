@@ -11,7 +11,7 @@ import {
 	PROVIDER_ORDER,
 	CARD_GAP,
 	ROW_GAP,
-	TARGET_CARD_WIDTH,
+	MAX_CARD_WIDTH,
 	TIER_MIN_WIDTH,
 	MIN_CARD_WIDTH,
 	TABLE_HEADER_HEIGHT,
@@ -36,7 +36,7 @@ const BASIC = JSON.parse(readFileSync(join(HERE, "fixtures", "snapshot-basic.jso
  */
 function manyAccounts(count) {
 	return {
-		schemaVersion: 2,
+		schemaVersion: 1,
 		providers: [{
 			id: "codex",
 			name: "Codex",
@@ -55,12 +55,12 @@ function manyAccounts(count) {
 }
 
 describe("constants", () => {
-	test("fixed provider order and geometry match plan §3.3", () => {
-		expect([...PROVIDER_ORDER]).toEqual(["codex", "claude", "grok", "antigravity"]);
+	test("fixed provider order and grid geometry", () => {
+		expect([...PROVIDER_ORDER]).toEqual(["codex", "claude", "antigravity"]);
 		expect(Object.isFrozen(PROVIDER_ORDER)).toBe(true);
 		expect(CARD_GAP).toBe(2);
 		expect(ROW_GAP).toBe(1);
-		expect(TARGET_CARD_WIDTH).toBe(48);
+		expect(MAX_CARD_WIDTH).toBe(72);
 		expect(TIER_MIN_WIDTH).toEqual({ 3: 44, 2: 36, 1: 28 });
 		expect(MIN_CARD_WIDTH).toBe(28);
 		expect(TABLE_HEADER_HEIGHT).toBe(0);
@@ -71,18 +71,18 @@ describe("constants", () => {
 describe("normalizeSnapshot", () => {
 	test("sorts providers into fixed order and accounts by label (code-unit order)", () => {
 		const normalized = normalizeSnapshot(BASIC);
-		expect(normalized.schemaVersion).toBe(2);
-		expect(normalized.providers.map(p => p.id)).toEqual(["codex", "claude", "grok", "antigravity"]);
+		expect(normalized.schemaVersion).toBe(1);
+		expect(normalized.providers.map(p => p.id)).toEqual(["codex", "claude", "antigravity", "example"]);
 		expect(normalized.providers[0].accounts.map(a => a.label)).toEqual(["personal", "work"]);
 		// "pending" (ASCII) sorts before "日本語ラベル" (U+65E5) by code unit.
-		expect(normalized.providers[3].accounts.map(a => a.label)).toEqual(["pending", "日本語ラベル"]);
+		expect(normalized.providers[2].accounts.map(a => a.label)).toEqual(["pending", "日本語ラベル"]);
 	});
 
 	test("unknown provider ids sort after the fixed order, alphabetically", () => {
 		const normalized = normalizeSnapshot({
-			providers: [{ id: "zeta" }, { id: "grok" }, { id: "alpha" }, { id: "codex" }],
+			providers: [{ id: "zeta" }, { id: "antigravity" }, { id: "alpha" }, { id: "codex" }],
 		});
-		expect(normalized.providers.map(p => p.id)).toEqual(["codex", "grok", "alpha", "zeta"]);
+		expect(normalized.providers.map(p => p.id)).toEqual(["codex", "antigravity", "alpha", "zeta"]);
 	});
 
 	test("sorting is stable across input permutations", () => {
@@ -98,7 +98,7 @@ describe("normalizeSnapshot", () => {
 	test("tolerates malformed input without throwing", () => {
 		for (const bad of [null, undefined, 42, "x", [], {}, { providers: "nope" }, { providers: [null, 1, {}] }]) {
 			const out = normalizeSnapshot(bad);
-			expect(out.schemaVersion).toBe(2);
+			expect(out.schemaVersion).toBe(1);
 			expect(Array.isArray(out.providers)).toBe(true);
 		}
 		const withJunkAccounts = normalizeSnapshot({ providers: [{ id: "codex", accounts: [null, "x", { windows: "bad", extras: 7 }] }] });
@@ -159,23 +159,23 @@ describe("normalizeSnapshot", () => {
 		expect(d.windows.map(w => w.detail)).toEqual(["1.2M / 5M tokens", null, null, null]);
 	});
 
-	test("uses v2 window fields only; legacy v1 names are ignored (no fallback)", () => {
+	test("uses canonical window fields only; alias names are ignored (no fallback)", () => {
 		const normalized = normalizeSnapshot({
 			providers: [{
 				id: "codex",
 				accounts: [{
 					label: "a",
 					windows: [
-						{ label: "legacy", remainingPercent: 64, usedPercent: 36, resetAt: "2026-09-17T23:00:00Z" },
-						{ label: "v2", percentRemaining: 64, resetsAt: "2026-09-17T23:00:00Z" },
+						{ label: "alias", remainingPercent: 64, usedPercent: 36, resetAt: "2026-09-17T23:00:00Z" },
+						{ label: "canonical", percentRemaining: 64, resetsAt: "2026-09-17T23:00:00Z" },
 					],
 				}],
 			}],
 		});
-		const [legacy, v2] = normalized.providers[0].accounts[0].windows;
-		expect(legacy).toEqual({ id: "legacy", label: "legacy", percentRemaining: null, resetsAt: null, detail: null });
-		expect(v2).toEqual({ id: "v2", label: "v2", percentRemaining: 64, resetsAt: "2026-09-17T23:00:00Z", detail: null });
-		expect(Object.keys(legacy).sort()).toEqual(["detail", "id", "label", "percentRemaining", "resetsAt"]);
+		const [alias, canonical] = normalized.providers[0].accounts[0].windows;
+		expect(alias).toEqual({ id: "alias", label: "alias", percentRemaining: null, resetsAt: null, detail: null });
+		expect(canonical).toEqual({ id: "canonical", label: "canonical", percentRemaining: 64, resetsAt: "2026-09-17T23:00:00Z", detail: null });
+		expect(Object.keys(alias).sort()).toEqual(["detail", "id", "label", "percentRemaining", "resetsAt"]);
 	});
 });
 
@@ -186,17 +186,17 @@ describe("buildCards", () => {
 			"codex:personal",
 			"codex:work",
 			"claude:main 👩‍💻",
-			"grok:",
 			"antigravity:pending",
 			"antigravity:日本語ラベル",
+			"example:",
 		]);
-		const grok = cards[3];
-		expect(grok.kind).toBe("provider");
-		expect(grok.status).toBe("error");
-		expect(grok.message).toBe("error: token refresh failed: invalid_grant");
+		const example = cards[5];
+		expect(example.kind).toBe("provider");
+		expect(example.status).toBe("error");
+		expect(example.message).toBe("error: token refresh failed: invalid_grant");
 	});
 
-	test("provider-level error and empty states are distinct; no provider-level loading (§3.1)", () => {
+	test("provider-level error and empty states are distinct; no provider-level loading", () => {
 		const cards = buildCards(normalizeSnapshot({
 			providers: [{ id: "codex", error: "config incomplete" }, { id: "claude", loading: true }],
 		}));
@@ -214,12 +214,12 @@ describe("buildCards", () => {
 
 describe("computeGrid", () => {
 	test.each([
-		[200, 6, 4, 48],
-		[120, 6, 2, 59],
-		[100, 6, 2, 49],
-		[98, 6, 2, 48],
-		[97, 6, 1, 97],
-		[80, 6, 1, 80],
+		[200, 6, 1, 72],
+		[120, 6, 1, 72],
+		[73, 6, 1, 72],
+		[72, 6, 1, 72],
+		[71, 6, 1, 71],
+		[80, 6, 1, 72],
 		[60, 6, 1, 60],
 		[45, 6, 1, 45],
 		[30, 6, 1, 30],
@@ -228,9 +228,9 @@ describe("computeGrid", () => {
 		expect(computeGrid(cols, cards)).toEqual({ columns, cardWidth });
 	});
 
-	test("columns never exceed the card count", () => {
-		expect(computeGrid(200, 1)).toEqual({ columns: 1, cardWidth: 200 });
-		expect(computeGrid(200, 2)).toEqual({ columns: 2, cardWidth: 99 });
+	test("cards always stack in one column, whatever the card count", () => {
+		expect(computeGrid(200, 1)).toEqual({ columns: 1, cardWidth: 72 });
+		expect(computeGrid(200, 2)).toEqual({ columns: 1, cardWidth: 72 });
 	});
 
 	test("degenerate inputs", () => {
@@ -255,8 +255,8 @@ describe("cardHeight", () => {
 	const byKey = Object.fromEntries(cards.map(c => [c.key, c]));
 
 	test("tier 0 is one list line per window (one for message cards)", () => {
-		expect(cards.map(card => cardHeight(card, 0, true))).toEqual([1, 2, 3, 1, 1, 2]);
-		expect(cards.map(listRowCount)).toEqual([1, 2, 3, 1, 1, 2]);
+		expect(cards.map(card => cardHeight(card, 0, true))).toEqual([1, 2, 3, 1, 2, 1]);
+		expect(cards.map(listRowCount)).toEqual([1, 2, 3, 1, 2, 1]);
 	});
 
 	test("ok account: chrome + one line per window; extras live in the border", () => {
@@ -269,7 +269,7 @@ describe("cardHeight", () => {
 	test("error, loading, and provider cards are chrome + one message line", () => {
 		expect(cardHeight(byKey["codex:personal"], 3, true)).toBe(3);
 		expect(cardHeight(byKey["antigravity:pending"], 3, true)).toBe(3);
-		expect(cardHeight(byKey["grok:"], 3, true)).toBe(3);
+		expect(cardHeight(byKey["example:"], 3, true)).toBe(3);
 	});
 
 	test("ok account with no windows still reserves one body line", () => {
@@ -294,35 +294,34 @@ describe("clampScroll", () => {
 });
 
 describe("computeLayout", () => {
-	test("200×50: 4 columns, tier 3 with extras, everything fits", () => {
+	test("200×50: one stacked column of capped-width cards, tier 3 with extras", () => {
 		const layout = computeLayout(BASIC, { cols: 200, rows: 50 });
-		expect(layout).toMatchObject({ columns: 4, cardWidth: 48, tier: 3, showExtras: true, fits: true });
+		expect(layout).toMatchObject({ columns: 1, cardWidth: 72, tier: 3, showExtras: true, fits: true });
 		expect(layout.placed).toHaveLength(6);
-		expect(layout.placed.map(p => [p.row, p.col])).toEqual([[0, 0], [0, 1], [0, 2], [0, 3], [1, 0], [1, 1]]);
-		expect(layout.placed.map(p => p.x)).toEqual([0, 50, 100, 150, 0, 50]);
-		// Row 0 tallest card is Claude (3 windows + chrome = 5).
-		expect(layout.placed[0].rowHeight).toBe(5);
-		expect(layout.placed[4].y).toBe(5 + ROW_GAP);
-		expect(layout.totalHeight).toBe(5 + 1 + 4);
+		expect(layout.placed.map(p => [p.row, p.col])).toEqual([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]);
+		expect(layout.placed.map(p => p.x)).toEqual([0, 0, 0, 0, 0, 0]);
+		// Heights 3, 4, 5 (Claude: 3 windows + chrome), 3, 4, 3 with one blank line between.
+		expect(layout.placed.map(p => p.y)).toEqual([0, 4, 9, 15, 19, 24]);
+		expect(layout.placed[2].rowHeight).toBe(5);
+		expect(layout.totalHeight).toBe(22 + 5 * ROW_GAP);
 	});
 
-	test("120×40: 2 columns, tier 3 with extras", () => {
+	test("120×40: still one column, tier 3 with extras", () => {
 		const layout = computeLayout(BASIC, { cols: 120, rows: 40 });
-		expect(layout).toMatchObject({ columns: 2, cardWidth: 59, tier: 3, showExtras: true, fits: true, totalHeight: 15 });
+		expect(layout).toMatchObject({ columns: 1, cardWidth: 72, tier: 3, showExtras: true, fits: true, totalHeight: 27 });
 	});
 
-	test("80×24: one column is too tall, so two narrower tier-2 columns are used", () => {
+	test("80×24: the stacked cards are too tall, so the compact list is used instead of side-by-side cards", () => {
 		const layout = computeLayout(BASIC, { cols: 80, rows: 24 });
-		expect(layout).toMatchObject({ columns: 2, cardWidth: 39, tier: 2, showExtras: false, fits: true, totalHeight: 15 });
+		expect(layout).toMatchObject({ columns: 1, cardWidth: 80, tier: 0, fits: true, totalHeight: 10 });
 		expect(layout.viewport).toEqual({ offset: 0, maxOffset: 0, visibleRows: 24, hiddenAbove: 0, hiddenBelow: 0 });
 	});
 
-	test("height fallback: tier3 → more columns → tier2 → tier1 → tier0 list → scroll (§3.3)", () => {
-		// 60 cols: one tier-3 column is 27 lines; two tier-1 columns are 15; the list is 10.
+	test("height fallback: tier3 → tier2 → tier1 → tier0 list → scroll, never side by side", () => {
+		// 60 cols: one tier-3 column is 27 lines; the list is 10.
 		const expectations = [
 			[27, { columns: 1, tier: 3, showExtras: true, fits: true, totalHeight: 27 }],
-			[26, { columns: 2, cardWidth: 29, tier: 1, fits: true, totalHeight: 15 }],
-			[15, { columns: 2, tier: 1, fits: true }],
+			[26, { columns: 1, tier: 0, fits: true, totalHeight: 10 }],
 			[14, { columns: 1, tier: 0, fits: true, totalHeight: 10 }],
 			[10, { tier: 0, fits: true, totalHeight: 10 }],
 			[9, { tier: 0, fits: false, totalHeight: 10 }],
@@ -366,7 +365,7 @@ describe("computeLayout", () => {
 	test("width below MIN_CARD_WIDTH always yields the tier-0 list", () => {
 		const layout = computeLayout(BASIC, { cols: 24, rows: 10 });
 		expect(layout).toMatchObject({ tier: 0, cardWidth: 24, totalHeight: 10, fits: true });
-		expect(layout.placed.map(p => p.y)).toEqual([0, 1, 3, 6, 7, 8]);
+		expect(layout.placed.map(p => p.y)).toEqual([0, 1, 3, 6, 7, 9]);
 		expect(computeLayout(BASIC, { cols: 27, rows: 100 }).tier).toBe(0);
 		expect(computeLayout(BASIC, { cols: 28, rows: 100 }).tier).toBe(1);
 	});

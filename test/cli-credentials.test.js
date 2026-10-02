@@ -17,7 +17,7 @@ import * as store from "../lib/credential-store.js";
 import { codex } from "../lib/providers/codex.js";
 
 let home;
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), "shuvquota-cli-cred-")); });
+beforeEach(() => { home = mkdtempSync(join(tmpdir(), "quotameter-cli-cred-")); });
 afterEach(() => { rmSync(home, { recursive: true, force: true }); });
 
 const ACCESS = "access-token-fixture-000000000000000000";
@@ -58,6 +58,11 @@ function credential(overrides = {}) {
 		accountId: "acct_fixture_1", access: ACCESS, refresh: REFRESH,
 		expires: 1_800_003_600_000, email: "alice@example.test", ...overrides,
 	};
+}
+
+/** A different account per label ("work" keeps the canonical fixture). */
+function credentialFor(ctx) {
+	return ctx.label === "work" ? credential() : credential({ accountId: `acct_${ctx.label}`, email: `${ctx.label}@example.test` });
 }
 
 /** Canonical healthy Codex payload (same shape as test/quota.test.js okUsage). */
@@ -127,9 +132,9 @@ function seedStore(id, accounts, rootFields = {}) {
 	writeFileSync(storePath(id), `${JSON.stringify({ ...rootFields, schemaVersion: 1, accounts }, null, 2)}\n`, { mode: 0o600 });
 }
 
-describe("cq <provider> add", () => {
+describe("qm <provider> add", () => {
 	test("persists exactly one independently enrolled row per label and refuses a duplicate without logging in again", async () => {
-		const { provider, calls } = makeProvider({ login: credential() });
+		const { provider, calls } = makeProvider({ login: credentialFor });
 		const first = await run(["codex", "add", "work", "--json"], { providers: [provider] });
 		expect(first.json()).toEqual({ provider: "codex", command: "add", label: "work" });
 		expect(calls.login).toEqual([{ label: "work" }]);
@@ -147,6 +152,25 @@ describe("cq <provider> add", () => {
 		await run(["codex", "add", "personal"], { providers: [provider] });
 		expect(readRows("codex").map(row => row.label)).toEqual(["work", "personal"]);
 		expect(readRows("codex").every(row => row.enrollment === "independent")).toBe(true);
+	});
+
+	test("refuses to store a second label for an account that is already added", async () => {
+		const { provider, calls } = makeProvider({ login: credential() });
+		await run(["codex", "add", "work"], { providers: [provider] });
+		const before = bytesOf(storePath("codex"));
+
+		const error = await fails(["codex", "add", "second"], { providers: [provider] });
+		expect(error.message).toMatch(/same codex account as 'work' \(a\*\*\*@example\.test\)/);
+		expect(error.message).toMatch(/Switch accounts in chatgpt\.com/);
+		expect(error.message).not.toContain("alice@example.test");
+		expect(calls.login).toHaveLength(2);
+		expect(bytesOf(storePath("codex"))).toBe(before);
+
+		const other = makeProvider({ login: credentialFor }).provider;
+		await run(["codex", "add", "personal"], { providers: [other] });
+		const reauth = await fails(["codex", "reauth", "personal"], { providers: [provider] });
+		expect(reauth.message).toMatch(/same codex account as 'work'/);
+		expect(readRows("codex").map(row => [row.label, row.accountId])).toEqual([["work", "acct_fixture_1"], ["personal", "acct_personal"]]);
 	});
 
 	test("a missing label is only ever supplied through the injected prompt", async () => {
@@ -172,7 +196,7 @@ describe("cq <provider> add", () => {
 	});
 });
 
-describe("cq <provider> reauth", () => {
+describe("qm <provider> reauth", () => {
 	test("requires an existing account and does not log in for a missing one", async () => {
 		const { provider, calls } = makeProvider({ login: credential() });
 		const error = await fails(["codex", "reauth", "work"], { providers: [provider] });
@@ -206,12 +230,12 @@ describe("cq <provider> reauth", () => {
 		expect(raw).not.toContain("sneaky-label-from-provider\"");
 	});
 
-	test("a legacy row is listed as read-only and becomes independent only after reauth", async () => {
-		seedStore("codex", [{ label: "imported", access: "legacy-access-token-2222222222222222", email: "carol@example.test" }], { note: "keep me" });
+	test("an imported row is listed as read-only and becomes independent only after reauth", async () => {
+		seedStore("codex", [{ label: "imported", access: "imported-access-token-2222222222222222", email: "carol@example.test" }], { note: "keep me" });
 		const { provider } = makeProvider({ login: credential({ accountId: "acct_after_reauth" }) });
 
 		const before = await run(["codex", "accounts", "--json"], { providers: [provider] });
-		expect(before.json()).toEqual([{ provider: "codex", label: "imported", email: "c***@example.test", enrollment: "legacy", readOnly: true }]);
+		expect(before.json()).toEqual([{ provider: "codex", label: "imported", email: "c***@example.test", enrollment: "imported", readOnly: true }]);
 		expect((await run(["codex", "accounts"], { providers: [provider] })).text).toBe("codex\timported\treauth required\n");
 
 		await run(["codex", "reauth", "imported"], { providers: [provider] });
@@ -221,16 +245,16 @@ describe("cq <provider> reauth", () => {
 	});
 });
 
-describe("cq <provider> rename / remove", () => {
+describe("qm <provider> rename / remove", () => {
 	/** Files in the fixture home that must never change under codex mutations. */
 	function seedNeighbours() {
 		seedStore("claude", [{ label: "claude-work", access: "sk-ant-oat-fixture", enrollment: "independent" }]);
-		seedStore("grok", [{ label: "grok-work", access: "xai-fixture", enrollment: "independent" }]);
+		seedStore("antigravity", [{ label: "antigravity-work", access: "ya29-fixture", enrollment: "independent" }]);
 		mkdirSync(join(home, ".codex"));
 		writeFileSync(join(home, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: "harness-fixture" } }));
 		return () => ({
 			claude: bytesOf(storePath("claude")),
-			grok: bytesOf(storePath("grok")),
+			antigravity: bytesOf(storePath("antigravity")),
 			harness: bytesOf(join(home, ".codex", "auth.json")),
 			listing: listing(),
 		});
@@ -238,7 +262,7 @@ describe("cq <provider> rename / remove", () => {
 
 	test("rename touches only the provider's own store and validates both labels", async () => {
 		const snapshot = seedNeighbours();
-		const { provider, calls } = makeProvider({ login: credential() });
+		const { provider, calls } = makeProvider({ login: credentialFor });
 		await run(["codex", "add", "work"], { providers: [provider] });
 		await run(["codex", "add", "other"], { providers: [provider] });
 		const neighbours = snapshot();
@@ -260,7 +284,7 @@ describe("cq <provider> rename / remove", () => {
 
 	test("remove deletes exactly one row, is an error when absent, and leaves neighbours untouched", async () => {
 		const snapshot = seedNeighbours();
-		const { provider } = makeProvider({ login: credential() });
+		const { provider } = makeProvider({ login: credentialFor });
 		await run(["codex", "add", "work"], { providers: [provider] });
 		await run(["codex", "add", "other"], { providers: [provider] });
 		const neighbours = snapshot();
@@ -314,14 +338,14 @@ describe("malformed existing store", () => {
 	});
 });
 
-describe("cq accounts", () => {
+describe("qm accounts", () => {
 	test("JSON carries an allowlist only: no tokens, no paths, masked email by default, full email on --show-email", async () => {
 		let next = credential();
 		const { provider } = makeProvider({ login: () => next });
 		await run(["codex", "add", "work"], { providers: [provider] });
 		next = credential({ accountId: "acct_fixture_2", email: "bob@example.test", access: "access-token-bob-3333333333333333333333" });
 		await run(["codex", "add", "bob@example.test"], { providers: [provider] });
-		seedStore("codex", [...readRows("codex"), { label: "imported", access: "legacy-access-token-4444444444444444", email: "carol@example.test" }]);
+		seedStore("codex", [...readRows("codex"), { label: "imported", access: "imported-access-token-4444444444444444", email: "carol@example.test" }]);
 
 		const masked = await run(["codex", "accounts", "--json"], { providers: [provider] });
 		const records = masked.json();
@@ -333,16 +357,16 @@ describe("cq accounts", () => {
 		expect(records[0]).toEqual({ provider: "codex", label: "work", email: "a***@example.test", enrollment: "independent", readOnly: false });
 		expect(records[1].email).toBe("b***@example.test");
 		expect(records[1].label).not.toContain("bob@example.test");
-		expect(records[2]).toMatchObject({ label: "imported", email: "c***@example.test", enrollment: "legacy", readOnly: true });
+		expect(records[2]).toMatchObject({ label: "imported", email: "c***@example.test", enrollment: "imported", readOnly: true });
 
-		for (const secret of [ACCESS, REFRESH, "access-token-bob", "legacy-access-token", home, "alice@example.test", "bob@example.test", "carol@example.test", "acct_fixture"]) {
+		for (const secret of [ACCESS, REFRESH, "access-token-bob", "imported-access-token", home, "alice@example.test", "bob@example.test", "carol@example.test", "acct_fixture"]) {
 			expect(masked.text).not.toContain(secret);
 		}
 
 		const shown = await run(["codex", "accounts", "--json", "--show-email"], { providers: [provider] });
 		expect(shown.json().map(record => record.email)).toEqual(["alice@example.test", "bob@example.test", "carol@example.test"]);
 		expect(shown.json()[1].label).not.toContain("bob@example.test");
-		for (const secret of [ACCESS, REFRESH, "access-token-bob", "legacy-access-token", home, "acct_fixture"]) {
+		for (const secret of [ACCESS, REFRESH, "access-token-bob", "imported-access-token", home, "acct_fixture"]) {
 			expect(shown.text).not.toContain(secret);
 		}
 
@@ -370,7 +394,7 @@ describe("cq accounts", () => {
 	});
 });
 
-describe("cq sources", () => {
+describe("qm sources", () => {
 	const SOURCE_KEYS = ["identityKey", "kind", "label", "location", "provider", "writable"];
 
 	function fixtureSources() {
@@ -382,7 +406,7 @@ describe("cq sources", () => {
 			{ provider: "codex", label: "cli", kind: "harness", location: join(home, ".codex", "auth.json"), identityKey: "acct_fixture_1", writable: false },
 			{ provider: "codex", label: "cli", kind: "harness", location: join(home, ".codex", "auth.json"), identityKey: "acct_fixture_1", writable: false },
 			{ provider: "codex", label: "proxx", kind: "remote", location: "https://user:pa55@proxx.example.test/api/usage?token=raw-query-token-6666&x=1#frag", identityKey: null, writable: false },
-			{ provider: "codex", label: "odd", kind: "legacy", location: managedPath, identityKey: "erin@example.test", writable: "yes" },
+			{ provider: "codex", label: "odd", kind: "bogus", location: managedPath, identityKey: "erin@example.test", writable: "yes" },
 			{ provider: "codex", label: `wo${ESC}[31mrk${ESC}[0m\x07 alice@example.test`, kind: "harness", location: `${home}/\x1b]0;title\x07x.json`, identityKey: null, writable: false },
 		];
 	}
@@ -442,7 +466,7 @@ describe("add → discover → fetch → provider.normalize → loadSnapshot →
 	const WINDOW_KEYS = ["id", "label", "percentRemaining", "percentUsed", "resetsAt", "windowSeconds"];
 
 	function expectRealSchema(display) {
-		expect(display.schemaVersion).toBe(2);
+		expect(display.schemaVersion).toBe(1);
 		expect(display.complete).toBe(true);
 		expect(display.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		expect(display.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);

@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { cellWidth, stripAnsi } from "../../lib/tui/width.js";
 import { computeLayout, cardHeight } from "../../lib/tui/layout.js";
 import {
+	localTimeZone,
 	DEFAULT_TIME_ZONE,
 	BAR_MIN_WIDTH,
 	BAR_MAX_WIDTH,
@@ -49,7 +50,7 @@ const CONTROL_RE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
  */
 function manyAccounts(count) {
 	return {
-		schemaVersion: 2,
+		schemaVersion: 1,
 		providers: [{
 			id: "codex",
 			name: "Codex",
@@ -150,7 +151,7 @@ describe("formatPercent / percentTone / formatBar", () => {
 		expect(formatPercent(NaN)).toBe("--%");
 	});
 
-	test("tone thresholds (§3.3: ≤20 red, ≤60 yellow, else green)", () => {
+	test("tone thresholds (≤20 red, ≤60 yellow, else green)", () => {
 		expect(percentTone(100)).toBe("good");
 		expect(percentTone(61)).toBe("good");
 		expect(percentTone(60.5)).toBe("good");
@@ -204,7 +205,7 @@ describe("redactEmail", () => {
 });
 
 describe("headerLine", () => {
-	const [personal, work, claude, grok] = computeLayout(BASIC, { cols: 200 }).cards;
+	const [personal, work, claude, , , example] = computeLayout(BASIC, { cols: 200 }).cards;
 
 	test("redacts email by default and shows it with showEmail", () => {
 		expect(headerLine(work, { showEmail: false })).toBe("Codex · work · Plus · s***@example.org");
@@ -214,7 +215,7 @@ describe("headerLine", () => {
 	test("omits missing plan/email and renders provider cards as the provider name", () => {
 		expect(headerLine(personal, { showEmail: false })).toBe("Codex · personal · Free · p***@example.org");
 		expect(headerLine(claude, { showEmail: false })).toBe("Claude · main 👩‍💻 · Max 20x · s***@example.com");
-		expect(headerLine(grok, { showEmail: false })).toBe("SuperGrok");
+		expect(headerLine(example, { showEmail: false })).toBe("Example");
 	});
 });
 
@@ -308,7 +309,7 @@ describe("renderCard", () => {
 	test("error, loading, provider-error, and empty states are visible", () => {
 		expect(renderCard(byKey["codex:personal"], { tier: 3, width: 48, now: NOW })[1]).toContain("✕ HTTP 401 unauthorized");
 		expect(renderCard(byKey["antigravity:pending"], { tier: 3, width: 48, now: NOW })[1]).toContain("loading…");
-		expect(renderCard(byKey["grok:"], { tier: 3, width: 48, now: NOW })[1]).toContain("✕ token refresh failed: invalid_grant");
+		expect(renderCard(byKey["example:"], { tier: 3, width: 48, now: NOW })[1]).toContain("✕ token refresh failed: invalid_grant");
 		const [empty] = computeLayout({ providers: [{ id: "claude", name: "Claude" }] }, { cols: 80 }).cards;
 		expect(renderCard(empty, { tier: 3, width: 48, now: NOW })[1]).toContain("no accounts");
 		const [noWindows] = computeLayout({ providers: [{ id: "claude", accounts: [{ label: "x" }] }] }, { cols: 80 }).cards;
@@ -448,7 +449,7 @@ describe("renderStatic goldens", () => {
 		expectGolden(`basic-${cols}x${rows}`, out);
 	});
 
-	test("renderStatic returns string[] with exactly layout.totalHeight lines (§3.4)", () => {
+	test("renderStatic returns string[] with exactly layout.totalHeight lines", () => {
 		for (const [cols, rows] of [[200, 50], [120, 40], [80, 24], [24, 8]]) {
 			const out = renderStatic(BASIC, { cols, rows, now: NOW });
 			expect(Array.isArray(out)).toBe(true);
@@ -519,7 +520,7 @@ describe("privacy and injection safety", () => {
 
 	test("dynamic values cannot inject control or escape sequences", () => {
 		const hostile = {
-			schemaVersion: 2,
+			schemaVersion: 1,
 			providers: [{
 				id: "codex",
 				name: "Codex\x1b[2J",
@@ -536,8 +537,8 @@ describe("privacy and injection safety", () => {
 					error: "boom\x1b[2J\x07\x1b]52;c;ZXZpbA==\x07",
 				}],
 			}, {
-				id: "grok",
-				name: "Grok",
+				id: "antigravity",
+				name: "Antigravity",
 				error: "\x1b[?1049h\x1b[2Jfail",
 				accounts: [],
 			}],
@@ -573,7 +574,7 @@ describe("privacy and injection safety", () => {
 describe("Unicode alignment", () => {
 	test("CJK, combining, and ZWJ labels keep card borders aligned", () => {
 		const snapshot = {
-			schemaVersion: 2,
+			schemaVersion: 1,
 			providers: [{
 				id: "codex",
 				name: "Codex",
@@ -618,14 +619,14 @@ describe("renderCompact", () => {
 		expect(lines).toContain("  Weekly: 7% left, resets 12:00 Sep 24");
 		expect(lines).toContain("  Sonnet: --% left");
 		expect(lines).toContain("  credits: 12");
-		expect(lines).toContain("SuperGrok");
+		expect(lines).toContain("Example");
 		expect(lines).toContain("  error: token refresh failed: invalid_grant");
 		expect(lines).toContain("  loading…");
 		expect(renderCompact({ providers: [{ id: "claude", name: "Claude" }] }, { now: NOW }))
 			.toEqual(["Claude", "  no accounts"]);
 	});
 
-	test("window detail is appended when present (§3.1 `detail?`)", () => {
+	test("window detail is appended when present (`detail?`)", () => {
 		const lines = renderCompact({
 			providers: [{
 				id: "codex",
@@ -652,5 +653,14 @@ describe("renderCompact", () => {
 	test("empty snapshot", () => {
 		expect(renderCompact({ providers: [] }, { now: NOW })).toEqual(["No quota data"]);
 		expect(renderCompact(null, { now: NOW })).toEqual(["No quota data"]);
+	});
+});
+
+describe("localTimeZone", () => {
+	test("prefers a valid QUOTAMETER_TIME_ZONE, else the machine zone", () => {
+		expect(localTimeZone({ QUOTAMETER_TIME_ZONE: "Europe/Berlin" })).toBe("Europe/Berlin");
+		const machine = Intl.DateTimeFormat().resolvedOptions().timeZone;
+		expect(localTimeZone({ QUOTAMETER_TIME_ZONE: "Not/AZone" })).toBe(machine);
+		expect(localTimeZone({})).toBe(machine);
 	});
 });

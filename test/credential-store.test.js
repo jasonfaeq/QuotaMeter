@@ -10,11 +10,11 @@ import {
 
 let home;
 let options;
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), "shuvquota-owned-")); options = { home }; });
+beforeEach(() => { home = mkdtempSync(join(tmpdir(), "quotameter-owned-")); options = { home }; });
 afterEach(() => { rmSync(home, { recursive: true, force: true }); });
 const credential = label => ({ label, access: "old-access", refresh: "old-refresh", expires: 1 });
 
-describe.each(["codex", "claude", "grok", "antigravity"])("%s managed-store contract", provider => {
+describe.each(["codex", "claude", "antigravity"])("%s managed-store contract", provider => {
 	test("add, rename, reauth, remove with private atomic writes", () => {
 		const path = getManagedStorePath(provider, options);
 		writeFileSync(path, JSON.stringify({ activeLabel: "obsolete", note: "keep", accounts: [] }));
@@ -32,11 +32,11 @@ describe.each(["codex", "claude", "grok", "antigravity"])("%s managed-store cont
 		expect(listManagedAccounts(provider, options)).toEqual([]);
 		expect(() => replaceManagedAccount(provider, "missing", credential("x"), options)).toThrow("not found");
 	});
-	test("legacy credentials remain unowned until explicit reauthentication", () => {
-		writeFileSync(getManagedStorePath(provider, options), JSON.stringify([credential("legacy")]));
+	test("imported credentials remain unowned until explicit reauthentication", () => {
+		writeFileSync(getManagedStorePath(provider, options), JSON.stringify([credential("imported")]));
 		expect(listManagedAccounts(provider, options)[0].readOnly).toBe(true);
-		expect(updateManagedAccountTokens(provider, "legacy", { access: "new" }, {}, options).reason).toBe("not-independent");
-		renameManagedAccount(provider, "legacy", "renamed", options);
+		expect(updateManagedAccountTokens(provider, "imported", { access: "new" }, {}, options).reason).toBe("not-independent");
+		renameManagedAccount(provider, "imported", "renamed", options);
 		expect(listManagedAccounts(provider, options)[0].readOnly).toBe(true);
 		replaceManagedAccount(provider, "renamed", credential("renamed"), options);
 		expect(listManagedAccounts(provider, options)[0].readOnly).toBe(false);

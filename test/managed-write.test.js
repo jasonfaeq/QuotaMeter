@@ -6,7 +6,7 @@ import { readMultiAccountContainer, writeMultiAccountContainer } from "../lib/co
 import { writeFileAtomic } from "../lib/fs.js";
 
 let home;
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), "shuvquota-write-")); });
+beforeEach(() => { home = mkdtempSync(join(tmpdir(), "quotameter-write-")); });
 afterEach(() => { rmSync(home, { recursive: true, force: true }); });
 
 test("managed writes drop activeLabel, preserve metadata, and set owner-only mode", () => {

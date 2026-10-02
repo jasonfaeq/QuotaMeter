@@ -14,27 +14,29 @@ import {
 	ANTIGRAVITY_TOKEN_URL,
 	ANTIGRAVITY_TIMEOUT_MS,
 	ANTIGRAVITY_USER_AGENT,
-} from "./lib/constants.js";
+} from "../lib/constants.js";
 
 import {
 	normalizeAntigravityAccount,
 	splitAntigravityRefresh,
 	loadAntigravityAccountsFromEnv,
-	loadAntigravityAccountsFromV1File,
+	loadAntigravityAccountsFromOpenCodeFile,
 	loadAntigravityAccountsFromIntegrationDb,
 	loadAllAntigravityAccounts,
-} from "./lib/antigravity-accounts.js";
+} from "../lib/antigravity-accounts.js";
 
 import {
+	ANTIGRAVITY_API_DISABLED_ERROR,
 	normalizeAntigravityQuota,
 	fetchAntigravityUsage,
-} from "./lib/antigravity-usage.js";
+} from "../lib/antigravity-usage.js";
+import { safePublicError } from "../lib/snapshot.js";
 
 import {
 	isAntigravityTokenExpiring,
 	refreshAntigravityToken,
 	ensureFreshAntigravityToken,
-} from "./lib/antigravity-tokens.js";
+} from "../lib/antigravity-tokens.js";
 
 const QUOTA = {
 	groups: [
@@ -90,8 +92,8 @@ describe("Antigravity constants", () => {
 });
 
 describe("Antigravity account discovery", () => {
-	const dbPath = join(tmpdir(), `shuvquota-antigravity-${process.pid}.db`);
-	const v1Path = join(tmpdir(), `shuvquota-antigravity-${process.pid}.json`);
+	const dbPath = join(tmpdir(), `quotameter-antigravity-${process.pid}.db`);
+	const openCodePath = join(tmpdir(), `quotameter-antigravity-${process.pid}.json`);
 	let originalRefresh;
 	let originalAccounts;
 	let originalLabel;
@@ -118,10 +120,10 @@ describe("Antigravity account discovery", () => {
 		delete process.env.ANTIGRAVITY_ACCESS;
 		delete process.env.ANTIGRAVITY_PROJECT;
 		rmSync(dbPath, { force: true });
-		rmSync(v1Path, { force: true });
+		rmSync(openCodePath, { force: true });
 	});
 
-	test("splits a V1 compound refresh token", () => {
+	test("splits an OpenCode compound refresh token", () => {
 		expect(splitAntigravityRefresh("1//abc|canvas-wallaby-dvmxc")).toEqual({
 			refresh: "1//abc",
 			projectId: "canvas-wallaby-dvmxc",
@@ -158,23 +160,23 @@ describe("Antigravity account discovery", () => {
 		expect(normalizeAntigravityAccount({ type: "key", key: "AIza" })).toBeNull();
 	});
 
-	test("loads environment and V1 accounts", () => {
+	test("loads environment and OpenCode file accounts", () => {
 		process.env.ANTIGRAVITY_REFRESH = "1//env";
 		process.env.ANTIGRAVITY_PROJECT = "env-project";
 		process.env.ANTIGRAVITY_LABEL = "env";
-		writeFileSync(v1Path, JSON.stringify({
+		writeFileSync(openCodePath, JSON.stringify({
 			activeIndex: 0,
-			accounts: [{ refreshToken: "1//v1|v1-project", email: "v1@gmail.com" }],
+			accounts: [{ refreshToken: "1//oc|oc-project", email: "oc@gmail.com" }],
 		}));
 		expect(loadAntigravityAccountsFromEnv()[0]).toMatchObject({
 			label: "env",
 			refresh: "1//env",
 			projectId: "env-project",
 		});
-		expect(loadAntigravityAccountsFromV1File(v1Path)[0]).toMatchObject({
-			refresh: "1//v1",
-			projectId: "v1-project",
-			email: "v1@gmail.com",
+		expect(loadAntigravityAccountsFromOpenCodeFile(openCodePath)[0]).toMatchObject({
+			refresh: "1//oc",
+			projectId: "oc-project",
+			email: "oc@gmail.com",
 		});
 	});
 
@@ -211,8 +213,8 @@ describe("Antigravity account discovery", () => {
 		expect(closed).toBe(true);
 	});
 
-	test("prefers a live shuvcode credential over a stale V1 refresh for the same project", async () => {
-		writeFileSync(v1Path, JSON.stringify({
+	test("prefers a live shuvcode credential over a stale OpenCode file refresh for the same project", async () => {
+		writeFileSync(openCodePath, JSON.stringify({
 			accounts: [{ refreshToken: "1//stale|canvas-wallaby-dvmxc" }],
 		}));
 		class FakeDatabase {
@@ -235,7 +237,7 @@ describe("Antigravity account discovery", () => {
 		}
 		const accounts = await loadAllAntigravityAccounts({
 			dbPaths: [dbPath],
-			v1Path,
+			openCodePath,
 			DatabaseSync: FakeDatabase,
 		});
 		expect(accounts).toHaveLength(1);
@@ -262,7 +264,7 @@ describe("Antigravity account discovery", () => {
 		}
 		const accounts = await loadAllAntigravityAccounts({
 			dbPaths: [dbPath],
-			v1Path: join(tmpdir(), "missing-antigravity.json"),
+			openCodePath: join(tmpdir(), "missing-antigravity.json"),
 			DatabaseSync: FakeDatabase,
 		});
 		expect(accounts).toHaveLength(1);
@@ -278,6 +280,19 @@ describe("Antigravity quota API", () => {
 		expect(usage.groups[0].buckets[1].percentRemaining).toBeCloseTo(0.40261);
 		expect(usage.groups[1].id).toBe("3p");
 		expect(usage.groups[1].buckets[0].percentRemaining).toBe(100);
+	});
+
+	test("a disabled Cloud Code API on the OAuth client's project is reported, not hidden", async () => {
+		const disabled = async () => new Response(JSON.stringify({
+			error: { code: 403, status: "PERMISSION_DENIED", details: [{ reason: "SERVICE_DISABLED" }] },
+		}), { status: 403 });
+		const result = await fetchAntigravityUsage({ access: "ya29.secret" }, { fetchFn: disabled });
+		expect(result).toMatchObject({ success: false, error: ANTIGRAVITY_API_DISABLED_ERROR, status: 403 });
+		expect(safePublicError(result.error)).toBe(ANTIGRAVITY_API_DISABLED_ERROR);
+
+		const denied = async () => new Response("{}", { status: 403 });
+		const signIn = await fetchAntigravityUsage({ access: "ya29.secret" }, { fetchFn: denied });
+		expect(signIn.error).toBe("Google AI Pro sign-in required");
 	});
 
 	test("fetches with bearer auth and project body", async () => {
@@ -387,7 +402,7 @@ describe("Antigravity token refresh", () => {
 		expect(result.error).toContain("ANTIGRAVITY_CLIENT_ID");
 	});
 
-	test("refreshGrok-style HTTP errors stay status-prefixed", async () => {
+	test("refresh HTTP errors stay status-prefixed", async () => {
 		const result = await refreshAntigravityToken("1//x", {
 			fetchFn: async () => ({
 				ok: false,

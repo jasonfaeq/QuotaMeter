@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseArgs, runCli } from "../lib/cli.js";
 
-describe("v2 command parsing", () => {
+describe("command parsing", () => {
 	test("defaults to one-shot quota and accepts provider shorthand", () => {
 		expect(parseArgs([])).toMatchObject({ command: "quota", provider: null });
 		expect(parseArgs(["codex", "work", "--json"])).toMatchObject({
@@ -11,7 +11,7 @@ describe("v2 command parsing", () => {
 	test.each(["watch", "tui", "-w"])("recognizes live alias %s", alias => {
 		expect(parseArgs([alias]).command).toBe("watch");
 	});
-	test("retains removed words in account-label positions", () => {
+	test("treats arbitrary words in account-label positions as labels", () => {
 		expect(parseArgs(["codex", "remove", "factory"]).args).toEqual(["factory"]);
 		expect(parseArgs(["quota", "synthetic"]).args).toEqual(["synthetic"]);
 	});
@@ -22,18 +22,11 @@ describe("v2 command parsing", () => {
 		expect(parseArgs(["-w", "factory"]).args).toEqual(["factory"]);
 		expect(parseArgs(["codex", "-w", "synthetic"]).args).toEqual(["synthetic"]);
 	});
-	test.each(["switch", "sync", "set-plan", "factory", "synthetic", "opencode-go", "proxx"])(
-		"rejects removed command %s with v1 exit code", command => {
-			for (const args of [[command], ["codex", command]]) {
-				try { parseArgs(args); throw new Error("accepted removed command"); }
-				catch (error) { expect(error.exitCode).toBe(2); expect(error.message).toContain("npx shuvquota@1"); }
-			}
-		},
-	);
-	test.each(["--local", "--native", "--no-factory", "--billing-day", "--oauth", "--manual",
-		"--dry-run", "--no-browser", "--base-url", "--token"])("rejects removed flag %s", flag => {
-		try { parseArgs([flag]); throw new Error("accepted removed flag"); }
-		catch (error) { expect(error.exitCode).toBe(2); }
+	test.each(["switch", "sync", "set-plan"])("rejects unknown command %s", command => {
+		expect(() => parseArgs([command])).toThrow(`Unknown command: ${command}`);
+	});
+	test.each(["--local", "--oauth", "--token"])("rejects unknown flag %s", flag => {
+		expect(() => parseArgs([flag])).toThrow(`Unknown option: ${flag}`);
 	});
 	test("validates interval rather than silently accepting malformed input", () => {
 		for (const value of ["", "14", "NaN", "Infinity", "nope"]) {
@@ -44,13 +37,13 @@ describe("v2 command parsing", () => {
 	});
 	test("rejects missing CRUD operands and unknown flags", () => {
 		expect(() => parseArgs(["claude", "rename", "work"])).toThrow();
-		expect(() => parseArgs(["grok", "reauth"])).toThrow();
+		expect(() => parseArgs(["antigravity", "reauth"])).toThrow();
 		expect(() => parseArgs(["--wat"])).toThrow();
 	});
 });
 
-describe("v2 command execution", () => {
-	const snapshot = { schemaVersion: 2, complete: true, generatedAt: "2026-09-18T20:00:00Z",
+describe("command execution", () => {
+	const snapshot = { schemaVersion: 1, complete: true, generatedAt: "2026-09-18T20:00:00Z",
 		providers: [{ id: "codex", name: "Codex", accounts: [{ label: "work", email: "alice@example.test",
 			plan: "Pro", status: "ok", windows: [{ id: "5h", label: "5h", percentRemaining: 64,
 				resetsAt: null }] }] }] };
@@ -62,9 +55,9 @@ describe("v2 command execution", () => {
 			async loadSnapshot() { calls++; return snapshot; } },
 			text: () => text, errors: () => errors, calls: () => calls };
 	}
-	test("JSON and static output share the v2 window contract and redact by default", async () => {
+	test("JSON and static output share the window contract and redact by default", async () => {
 		const json = fixture(); await runCli(["--json"], json.deps);
-		expect(JSON.parse(json.text()).schemaVersion).toBe(2);
+		expect(JSON.parse(json.text()).schemaVersion).toBe(1);
 		expect(JSON.parse(json.text()).providers[0].accounts[0].windows[0].percentRemaining).toBe(64);
 		expect(json.text()).not.toContain("alice@example.test");
 		const terminal = fixture(); await runCli([], terminal.deps);

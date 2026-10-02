@@ -114,7 +114,7 @@ describe("renderShell", () => {
 
 	test("top bar starts with the gauge wordmark", () => {
 		const [top] = renderShell(view(), { cols: 80, rows: 10 }, { now: NOW, color: false }).lines;
-		expect(top.startsWith(" ▂▄▆█ shuvquota │")).toBe(true);
+		expect(top.startsWith(" ▂▄▆█ quotameter │")).toBe(true);
 	});
 
 	test("emails are masked unless revealed", () => {
@@ -150,13 +150,13 @@ describe("renderShell", () => {
 	test("error accounts show their message in the detail pane", () => {
 		const lines = renderShell(view({ selected: "codex:personal" }), { cols: 120, rows: 30 }, { now: NOW, color: false }).lines.join("\n");
 		expect(lines).toContain("✕  HTTP 401 unauthorized");
-		expect(lines).toContain("Sign in again with  cq codex reauth personal");
+		expect(lines).toContain("Sign in again with  qm codex reauth personal");
 	});
 
 	test("empty providers suggest the enrollment command", () => {
-		const snapshot = { schemaVersion: 2, providers: [{ id: "grok", name: "Grok", accounts: [] }] };
+		const snapshot = { schemaVersion: 1, providers: [{ id: "antigravity", name: "Antigravity", accounts: [] }] };
 		const lines = renderShell(view({ snapshot }), { cols: 100, rows: 20 }, { now: NOW, color: false }).lines.join("\n");
-		expect(lines).toContain("Add one with  cq grok add");
+		expect(lines).toContain("Add one with  qm antigravity add");
 	});
 
 	test("status bar summarizes accounts, low quota, and errors", () => {
@@ -193,7 +193,7 @@ describe("summaries", () => {
 			{ id: "fable-weekly", label: "Fable weekly", percentRemaining: 29 },
 		] } };
 		expect(summaryPercents(card)).toEqual([{ label: "", percent: 55 }, { label: "fable", percent: 29 }]);
-		const lines = renderShell(view({ snapshot: { schemaVersion: 2, providers: [{ id: "claude", name: "Claude",
+		const lines = renderShell(view({ snapshot: { schemaVersion: 1, providers: [{ id: "claude", name: "Claude",
 			accounts: [{ label: "work", status: "ok", windows: card.account.windows }] }] } }),
 		{ cols: 50, rows: 12 }, { now: NOW, color: false }).lines.join("\n");
 		expect(lines).toMatch(/● work {5,}fable 29% {3}55%/);
@@ -217,7 +217,7 @@ describe("selection", () => {
 	test("selectedIndex falls back to the same provider, then the first card", () => {
 		const cards = visibleCards(BASIC, null);
 		expect(selectedIndex(cards, "claude:main 👩‍💻")).toBe(2);
-		expect(selectedIndex(cards, "antigravity:gone")).toBe(4);
+		expect(selectedIndex(cards, "antigravity:gone")).toBe(3);
 		expect(selectedIndex(cards, "nope")).toBe(0);
 		expect(selectedIndex([], "x")).toBe(-1);
 	});
@@ -230,7 +230,7 @@ describe("selection", () => {
 		moveSelection(state, 1);
 		expect(state.selected).toBe("codex:work");
 		moveSelection(state, 99);
-		expect(state.selected).toBe("antigravity:日本語ラベル");
+		expect(state.selected).toBe("example:");
 		moveSelection(state, -99);
 		expect(state.selected).toBe("codex:personal");
 	});

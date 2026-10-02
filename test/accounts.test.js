@@ -1,6 +1,6 @@
 /**
- * Legacy account loading and validation tests migrated from shuvquota.test.js
- * Run with: bun test test/legacy/accounts.test.js
+ * Account loading and validation tests.
+ * Run with: bun test test/accounts.test.js
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -15,22 +15,23 @@ import {
 	findAccountByLabel,
 	getAllLabels,
 	deduplicateAccountsByEmail,
-} from "../../lib/codex-accounts.js";
+} from "../lib/codex-accounts.js";
 
 import {
 	isValidClaudeAccount,
 	loadClaudeAccountsFromEnv,
 	loadClaudeAccountsFromFile,
-} from "../../lib/claude-accounts.js";
+} from "../lib/claude-accounts.js";
 
 import {
+	readClaudeCodeAccount,
 	loadClaudeOAuthFromEnv,
 	loadClaudeOAuthFromClaudeCode,
 	loadAllClaudeOAuthAccounts,
 	deduplicateClaudeOAuthAccounts,
 	deduplicateClaudeResultsByUsage,
 	buildClaudeUsageFingerprint,
-} from "../../lib/claude-usage.js";
+} from "../lib/claude-usage.js";
 
 function createMockAccessToken(accountId, email = "test@example.com", planType = "plus") {
 	const header = { alg: "RS256", typ: "JWT" };
@@ -287,7 +288,7 @@ describe("loadClaudeAccountsFromEnv", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("loadAccountsFromFile", () => {
-	const testDir = join(tmpdir(), "shuvquota-test-" + Date.now());
+	const testDir = join(tmpdir(), "quotameter-test-" + Date.now());
 	const testFile = join(testDir, "accounts.json");
 
 	beforeEach(() => {
@@ -352,7 +353,7 @@ describe("loadAccountsFromFile", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("loadClaudeAccountsFromFile", () => {
-	const testDir = join(tmpdir(), "shuvquota-claude-test-" + Date.now());
+	const testDir = join(tmpdir(), "quotameter-claude-test-" + Date.now());
 	const testFile = join(testDir, "claude-accounts.json");
 
 	beforeEach(() => {
@@ -486,7 +487,7 @@ describe("loadClaudeOAuthFromEnv", () => {
 });
 
 describe("loadClaudeOAuthFromClaudeCode", () => {
-	const testDir = join(tmpdir(), "shuvquota-claude-oauth-test-" + Date.now());
+	const testDir = join(tmpdir(), "quotameter-claude-oauth-test-" + Date.now());
 	const testCredentialsFile = join(testDir, ".credentials.json");
 	let originalEnv;
 
@@ -841,5 +842,24 @@ describe("getAllLabels", () => {
 		const labels = getAllLabels();
 		expect(labels).toContain("dedup-test-1");
 		expect(labels).toContain("dedup-test-2");
+	});
+});
+
+describe("readClaudeCodeAccount", () => {
+	test("reads the account id and email stored beside Claude Code credentials", () => {
+		const root = join(tmpdir(), `quotameter-claude-config-${process.pid}`);
+		mkdirSync(join(root, ".claude"), { recursive: true });
+		try {
+			const credentials = join(root, ".claude", ".credentials.json");
+			expect(readClaudeCodeAccount(credentials)).toEqual({ accountUuid: null, email: null });
+			writeFileSync(join(root, ".claude.json"), JSON.stringify({
+				oauthAccount: { accountUuid: "uuid-1", emailAddress: "me@example.test", organizationUuid: "org-1" },
+			}));
+			expect(readClaudeCodeAccount(credentials)).toEqual({ accountUuid: "uuid-1", email: "me@example.test" });
+			writeFileSync(join(root, ".claude.json"), "{ not json");
+			expect(readClaudeCodeAccount(credentials)).toEqual({ accountUuid: null, email: null });
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

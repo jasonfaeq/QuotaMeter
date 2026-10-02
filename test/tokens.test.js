@@ -1,6 +1,6 @@
 /**
- * Legacy token refresh and expiry tests migrated from shuvquota.test.js
- * Run with: bun test test/legacy/tokens.test.js
+ * Token refresh and expiry tests.
+ * Run with: bun test test/tokens.test.js
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -12,16 +12,16 @@ import {
 	TOKEN_URL,
 	CLIENT_ID,
 	OPENAI_OAUTH_REFRESH_BUFFER_MS,
-} from "../../lib/constants.js";
-import { fetchClaudeOAuthUsageForAccount } from "../../lib/claude-usage.js";
+} from "../lib/constants.js";
+import { fetchClaudeOAuthUsageForAccount } from "../lib/claude-usage.js";
 import {
 	refreshClaudeToken,
 	isClaudeOauthTokenExpiring,
-} from "../../lib/claude-tokens.js";
+} from "../lib/claude-tokens.js";
 import {
 	refreshToken,
 	isOpenAiOauthTokenExpiring,
-} from "../../lib/codex-tokens.js";
+} from "../lib/codex-tokens.js";
 
 describe("fetchClaudeOAuthUsageForAccount", () => {
 	let originalFetch;

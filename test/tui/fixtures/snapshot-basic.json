@@ -1,10 +1,10 @@
 {
-	"schemaVersion": 2,
+	"schemaVersion": 1,
 	"generatedAt": "2026-09-17T19:00:00Z",
 	"providers": [
 		{
-			"id": "grok",
-			"name": "SuperGrok",
+			"id": "example",
+			"name": "Example",
 			"error": "token refresh failed: invalid_grant",
 			"accounts": []
 		},

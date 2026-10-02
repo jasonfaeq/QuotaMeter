@@ -1,4 +1,4 @@
-import { clampPercent, riskFor } from "./quota-risk.js?v=15";
+import { clampPercent, riskFor } from "./quota-risk.js?v=1";
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 75 * 1000;
@@ -7,7 +7,6 @@ const HISTORY_LIMIT = 12;
 const PROVIDER_ICONS = Object.freeze({
 	codex: "/icons/providers/openai.svg",
 	claude: "/icons/providers/anthropic.svg",
-	grok: "/icons/providers/xai.svg",
 	antigravity: "/icons/providers/antigravity.svg",
 });
 
@@ -204,13 +203,7 @@ function cell(label, className, children) {
 }
 
 function providerSetupHint(providerId) {
-	if (providerId === "grok") {
-		return "Sign in with SuperGrok OAuth in pi, OpenCode, or Hermes.";
-	}
-	if (providerId === "antigravity") {
-		return "Connect Google AI Pro in shuvcode, or set ANTIGRAVITY_REFRESH.";
-	}
-	return `Run shuvquota ${providerId} add to configure this provider.`;
+	return `Run quotameter ${providerId} add to configure this provider.`;
 }
 
 function renderProviderRow(row) {
@@ -454,7 +447,7 @@ async function refreshQuota({ manual = false } = {}) {
 		});
 		const snapshot = await response.json();
 		if (!response.ok) throw new Error("Quota service unavailable");
-		if (snapshot?.schemaVersion !== 2 || !Array.isArray(snapshot.providers)) {
+		if (snapshot?.schemaVersion !== 1 || !Array.isArray(snapshot.providers)) {
 			throw new Error("Unsupported quota snapshot");
 		}
 		state.snapshot = snapshot;
@@ -521,7 +514,7 @@ async function requestInstall() {
 	state.deferredInstallPrompt.prompt();
 	const choice = await state.deferredInstallPrompt.userChoice;
 	state.deferredInstallPrompt = null;
-	showToast(choice.outcome === "accepted" ? "shuvquota installation started." : "Installation dismissed.");
+	showToast(choice.outcome === "accepted" ? "QuotaMeter installation started." : "Installation dismissed.");
 	updateInstallUi();
 }
 
@@ -548,7 +541,7 @@ function initializeEvents() {
 	});
 	window.addEventListener("appinstalled", () => {
 		state.deferredInstallPrompt = null;
-		showToast("shuvquota is installed.");
+		showToast("QuotaMeter is installed.");
 		updateInstallUi();
 	});
 	window.addEventListener("offline", () => {

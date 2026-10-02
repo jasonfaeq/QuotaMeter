@@ -1,33 +1,33 @@
 {
-  "name": "shuvquota",
-  "version": "2.0.0",
-  "description": "Self-managed multi-provider quota monitor with a responsive terminal UI",
+  "name": "quotameter",
+  "version": "1.0.0",
+  "description": "Multi-account quota monitor for Codex, Claude, and Antigravity with a responsive terminal UI",
+  "author": "JasonFaeq",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shuv1337/shuvquota.git"
+    "url": "git+https://github.com/jasonfaeq/QuotaMeter.git"
   },
-  "homepage": "https://github.com/shuv1337/shuvquota#readme",
+  "homepage": "https://github.com/jasonfaeq/QuotaMeter#readme",
   "bugs": {
-    "url": "https://github.com/shuv1337/shuvquota/issues"
+    "url": "https://github.com/jasonfaeq/QuotaMeter/issues"
   },
   "files": [
-    "shuvquota.js",
-    "shuvquota-server.js",
+    "quotameter.js",
+    "quotameter-server.js",
     "lib/",
     "web/",
     "README.md",
     "LICENSE"
   ],
   "bin": {
-    "cq": "./shuvquota.js",
-    "sq": "./shuvquota.js",
-    "shuvquota": "./shuvquota.js",
-    "shuvquota-server": "./shuvquota-server.js"
+    "quotameter": "./quotameter.js",
+    "qm": "./quotameter.js",
+    "quotameter-server": "./quotameter-server.js"
   },
   "scripts": {
-    "start": "node shuvquota.js",
-    "app": "node shuvquota-server.js",
+    "start": "node quotameter.js",
+    "app": "node quotameter-server.js",
     "test": "bun test",
     "preflight": "node scripts/preflight.js",
     "release:patch": "bun pm version patch",

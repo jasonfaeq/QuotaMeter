@@ -12,21 +12,21 @@ import {
 	QuotaLoadError,
 	buildAllowedHosts,
 	createQuotaLoader,
-	createShuvquotaServer,
+	createQuotaMeterServer,
 	getMimeType,
 	isAllowedHost,
 	resolveStaticFile,
-} from "./lib/shuvquota-server.js";
-import { parseShuvquotaPort } from "./shuvquota-server.js";
+} from "../lib/server.js";
+import { parseQuotaMeterPort } from "../quotameter-server.js";
 
 const FIXED_NOW = new Date("2026-07-16T12:00:00.000Z");
 
 // A broken projection module must fail the suite, never skip privacy coverage.
-await import("./lib/snapshot.js");
+await import("../lib/snapshot.js");
 
 function maliciousV2Payload() {
 	return {
-		schemaVersion: 2,
+		schemaVersion: 1,
 		providers: [
 			{
 				id: "codex",
@@ -51,7 +51,7 @@ function maliciousV2Payload() {
 						]
 					}
 				],
-				error: "HTTP 401 token sk-secret at /home/shuv/auth.json",
+				error: "HTTP 401 token sk-secret at /home/user/auth.json",
 			}
 		]
 	};
@@ -105,19 +105,19 @@ describe("quota loader", () => {
 
 describe("host and entry point configuration", () => {
 	test("allows configured names port-insensitively alongside localhost defaults", () => {
-		const allowed = buildAllowedHosts("shuvdev.tail586a6d.ts.net, quota.internal:8443", "127.0.0.1");
-		expect(isAllowedHost("shuvdev.tail586a6d.ts.net:4789", allowed)).toBe(true);
+		const allowed = buildAllowedHosts("quota-host.example.ts.net, quota.internal:8443", "127.0.0.1");
+		expect(isAllowedHost("quota-host.example.ts.net:4789", allowed)).toBe(true);
 		expect(isAllowedHost("quota.internal:443", allowed)).toBe(true);
 		expect(isAllowedHost("localhost:9999", allowed)).toBe(true);
 		expect(isAllowedHost("attacker.example", allowed)).toBe(false);
-		expect(isAllowedHost("shuvdev.tail586a6d.ts.net@attacker.example", allowed)).toBe(false);
+		expect(isAllowedHost("quota-host.example.ts.net@attacker.example", allowed)).toBe(false);
 	});
 
 	test("validates the server port", () => {
-		expect(parseShuvquotaPort(undefined)).toBe(4789);
-		expect(parseShuvquotaPort("8443")).toBe(8443);
-		expect(() => parseShuvquotaPort("0")).toThrow();
-		expect(() => parseShuvquotaPort("not-a-port")).toThrow();
+		expect(parseQuotaMeterPort(undefined)).toBe(4789);
+		expect(parseQuotaMeterPort("8443")).toBe(8443);
+		expect(() => parseQuotaMeterPort("0")).toThrow();
+		expect(() => parseQuotaMeterPort("not-a-port")).toThrow();
 	});
 });
 
@@ -126,9 +126,9 @@ describe("static file resolution and MIME", () => {
 	let outside;
 
 	beforeAll(() => {
-		root = mkdtempSync(join(tmpdir(), "shuvquota-static-"));
+		root = mkdtempSync(join(tmpdir(), "quotameter-static-"));
 		outside = `${root}-outside.txt`;
-		writeFileSync(join(root, "index.html"), "<!doctype html><title>shuvquota</title>");
+		writeFileSync(join(root, "index.html"), "<!doctype html><title>quotameter</title>");
 		writeFileSync(join(root, "app.js"), "export const app = true;\n");
 		writeFileSync(join(root, "site.webmanifest"), "{}\n");
 		writeFileSync(outside, "private\n");
@@ -182,21 +182,21 @@ function rawRequest(port, path, options = {}) {
 	});
 }
 
-describe("shuvquota HTTP server", () => {
+describe("quotameter HTTP server", () => {
 	let root;
 	let server;
 	let port;
 	let quotaCalls;
 
 	beforeAll(async () => {
-		root = mkdtempSync(join(tmpdir(), "shuvquota-http-"));
-		writeFileSync(join(root, "index.html"), "<!doctype html><title>shuvquota</title>");
+		root = mkdtempSync(join(tmpdir(), "quotameter-http-"));
+		writeFileSync(join(root, "index.html"), "<!doctype html><title>quotameter</title>");
 		writeFileSync(join(root, "app.js"), "export const app = true;\n");
 		writeFileSync(join(root, "site.webmanifest"), "{}\n");
 		quotaCalls = 0;
-		server = createShuvquotaServer({
+		server = createQuotaMeterServer({
 			webRoot: root,
-			allowedHosts: "shuvdev.tail586a6d.ts.net",
+			allowedHosts: "quota-host.example.ts.net",
 			quotaLoader: createQuotaLoader({
 				execute: async () => {
 					quotaCalls += 1;
@@ -217,7 +217,7 @@ describe("shuvquota HTTP server", () => {
 	test("serves health with API privacy and strong security headers", async () => {
 		const response = await rawRequest(port, "/api/health");
 		expect(response.status).toBe(200);
-		expect(JSON.parse(response.body)).toEqual({ status: "ok", service: "shuvquota", schemaVersion: 2 });
+		expect(JSON.parse(response.body)).toEqual({ status: "ok", service: "quotameter", schemaVersion: 1 });
 		expect(response.headers["cache-control"]).toContain("private");
 		expect(response.headers["cache-control"]).toContain("no-store");
 		expect(response.headers["content-security-policy"]).toContain("default-src 'self'");
@@ -233,13 +233,13 @@ describe("shuvquota HTTP server", () => {
 		const payload = JSON.parse(response.body);
 		expect(response.status).toBe(200);
 		expect(response.headers["cache-control"]).toContain("no-store");
-		expect(payload.schemaVersion).toBe(2);
+		expect(payload.schemaVersion).toBe(1);
 		expect(payload.providers).toHaveLength(1);
 		
 		// Ensure secrets are stripped by toPublicSnapshot
 		expect(response.body).not.toContain("secret-email");
 		expect(response.body).not.toContain("sk-secret");
-		expect(response.body).not.toContain("/home/shuv/auth.json");
+		expect(response.body).not.toContain("/home/user/auth.json");
 		expect(response.body).not.toContain("secret-detail-path");
 		expect(response.body).not.toContain("secret-token-value");
 		expect(quotaCalls).toBe(1);
@@ -270,7 +270,7 @@ describe("shuvquota HTTP server", () => {
 		const host = await rawRequest(port, "/", { host: "attacker.example:4789" });
 		expect(host.status).toBe(421);
 		const tailscale = await rawRequest(port, "/api/health", {
-			host: "shuvdev.tail586a6d.ts.net:8443",
+			host: "quota-host.example.ts.net:8443",
 		});
 		expect(tailscale.status).toBe(200);
 		const crossSite = await rawRequest(port, "/api/quota", {
@@ -287,7 +287,7 @@ describe("shuvquota HTTP server", () => {
 
 describe("quota API failures", () => {
 	test("does not trust injected QuotaLoadError messages as public text", async () => {
-		const server = createShuvquotaServer({ quotaLoader: async () => {
+		const server = createQuotaMeterServer({ quotaLoader: async () => {
 			throw new QuotaLoadError("FAILED", "token abc-private at /home/private/auth.json");
 		} });
 		await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -300,9 +300,9 @@ describe("quota API failures", () => {
 		} finally { await new Promise(resolve => server.close(resolve)); }
 	});
 	test("returns a conforming, private 503 DTO without raw child errors", async () => {
-		const root = mkdtempSync(join(tmpdir(), "shuvquota-failure-"));
+		const root = mkdtempSync(join(tmpdir(), "quotameter-failure-"));
 		writeFileSync(join(root, "index.html"), "ok\n");
-		const server = createShuvquotaServer({
+		const server = createQuotaMeterServer({
 			webRoot: root,
 			quotaLoader: createQuotaLoader({
 				execute: async () => {
@@ -318,8 +318,8 @@ describe("quota API failures", () => {
 			const payload = JSON.parse(response.body);
 			expect(response.status).toBe(503);
 			expect(response.headers["cache-control"]).toContain("no-store");
-			expect(payload.schemaVersion).toBe(2);
-			expect(payload.error).toBe("Quota data unavailable"); // v2 schema puts error at root or provider, toPublicSnapshot handles it
+			expect(payload.schemaVersion).toBe(1);
+			expect(payload.error).toBe("Quota data unavailable");
 			expect(response.body).not.toContain("access token");
 			expect(response.body).not.toContain("/home/private");
 		} finally {

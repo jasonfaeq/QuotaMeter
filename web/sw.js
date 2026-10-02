@@ -1,12 +1,12 @@
-const CACHE_VERSION = "v15";
-const SHELL_CACHE = `shuvquota-shell-${CACHE_VERSION}`;
-const STATIC_CACHE = `shuvquota-static-${CACHE_VERSION}`;
+const CACHE_VERSION = "v1";
+const SHELL_CACHE = `quotameter-shell-${CACHE_VERSION}`;
+const STATIC_CACHE = `quotameter-static-${CACHE_VERSION}`;
 
 const SHELL_URLS = [
 	"/index.html",
-	"/app.js?v=15",
-	"/quota-risk.js?v=15",
-	"/styles.css?v=15",
+	"/app.js?v=1",
+	"/quota-risk.js?v=1",
+	"/styles.css?v=1",
 	"/manifest.webmanifest",
 	"/fonts/barlow-condensed-500.woff2",
 	"/fonts/barlow-condensed-600.woff2",
@@ -16,7 +16,7 @@ const SHELL_URLS = [
 	"/fonts/inter-400.woff2",
 	"/fonts/inter-500.woff2",
 	"/fonts/inter-600.woff2",
-	"/icons/devil-phone.svg",
+	"/icons/logo.svg",
 	"/icons/favicon.ico",
 	"/icons/icon-180.png",
 	"/icons/icon-192.png",
@@ -24,7 +24,6 @@ const SHELL_URLS = [
 	"/icons/icon-maskable-512.png",
 	"/icons/providers/openai.svg",
 	"/icons/providers/anthropic.svg",
-	"/icons/providers/xai.svg",
 	"/icons/providers/antigravity.svg",
 	"/icons/ui/overview.svg",
 	"/icons/ui/history.svg",
@@ -50,7 +49,7 @@ self.addEventListener("activate", (event) => {
 		caches.keys()
 			.then((keys) => Promise.all(
 				keys
-					.filter((key) => key.startsWith("shuvquota-")
+					.filter((key) => key.startsWith("quotameter-")
 						&& key !== SHELL_CACHE
 						&& key !== STATIC_CACHE)
 					.map((key) => caches.delete(key))
@@ -68,7 +67,7 @@ async function networkFirstNavigation(request) {
 		return await fetch(request);
 	} catch {
 		return (await caches.match("/index.html"))
-			?? new Response("shuvquota is offline", {
+			?? new Response("QuotaMeter is offline", {
 				status: 503,
 				headers: { "Content-Type": "text/plain; charset=utf-8" }
 			});

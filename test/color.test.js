@@ -1,10 +1,10 @@
 /**
- * Legacy color utilities tests migrated from shuvquota.test.js
- * Run with: bun test test/legacy/color.test.js
+ * Color utility tests.
+ * Run with: bun test test/color.test.js
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { colorize, setNoColorFlag, supportsColor } from "../../lib/color.js";
+import { colorize, setNoColorFlag, supportsColor } from "../lib/color.js";
 
 describe("colorize", () => {
 	test("returns text unchanged when colors not supported", () => {

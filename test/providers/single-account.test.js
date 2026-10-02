@@ -7,7 +7,7 @@ import { createAntigravityProvider } from "../../lib/providers/antigravity.js";
 import { addManagedAccount, getManagedStorePath } from "../../lib/credential-store.js";
 
 let home;
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), "shuvquota-single-")); });
+beforeEach(() => { home = mkdtempSync(join(tmpdir(), "quotameter-single-")); });
 afterEach(() => { rmSync(home, { recursive: true, force: true }); });
 
 for (const [id, createProvider] of [["claude", createClaudeProvider], ["antigravity", createAntigravityProvider]]) {
@@ -18,7 +18,7 @@ for (const [id, createProvider] of [["claude", createClaudeProvider], ["antigrav
 		];
 		let refreshed = false;
 		const provider = createProvider({ home, external: () => rows,
-			env: { SHUVQUOTA_SINGLE_ACCOUNT_PROVIDERS: "claude,antigravity" },
+			env: { QUOTAMETER_SINGLE_ACCOUNT_PROVIDERS: "claude,antigravity" },
 			refresh: () => { refreshed = true; throw new Error("must not refresh external sessions"); },
 			fetchUsage: async account => ({ selected: account.access }),
 		});
@@ -41,7 +41,7 @@ for (const [id, createProvider] of [["claude", createClaudeProvider], ["antigrav
 		addManagedAccount(id, { label: "owned", access: "owned-access", refresh: "owned-refresh", expires: 1 }, { home });
 		const path = getManagedStorePath(id, { home });
 		const before = readFileSync(path, "utf8");
-		const provider = createProvider({ home, env: { SHUVQUOTA_SINGLE_ACCOUNT_PROVIDERS: id },
+		const provider = createProvider({ home, env: { QUOTAMETER_SINGLE_ACCOUNT_PROVIDERS: id },
 			external: () => [{ label: "external", kind: "harness", access: "external-access", refresh: "external-refresh", expires: Date.now() + 3600000 }],
 		});
 		const accounts = await provider.discoverAccounts();

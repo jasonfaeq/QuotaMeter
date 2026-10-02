@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { fetchClaudeOAuthUsage } from "../lib/claude-usage.js";
-import { fetchGrokUsage } from "../lib/grok-usage.js";
-import { normalizeGrokAccount, toPublicSnapshot, safePublicError } from "../lib/snapshot.js";
+import { safePublicError } from "../lib/snapshot.js";
 
 test("Claude backs off on Retry-After zero and retries only after cooldown", async () => {
 	let clock = 1000;
@@ -29,21 +28,4 @@ test("Claude honors a longer Retry-After without blocking another credential", a
 	expect(result.retryAt).toBe(901000);
 	expect((await fetchClaudeOAuthUsage("fixture-other-account", { now,
 		fetchFn: async () => Response.json({}) })).success).toBe(true);
-});
-
-test("Grok permission denial survives the public projection as an actionable error", async () => {
-	const result = await fetchGrokUsage({ accessToken: "fixture-grok-token" }, {
-		fetchFn: async () => Response.json({ error: "User does not have Grok Code CLI permission" }, { status: 403 }),
-	});
-	expect(result.error).toBe("This Grok session lacks Code CLI access");
-	const account = normalizeGrokAccount({ label: "work" }, { error: result.error });
-	const publicSnapshot = toPublicSnapshot({ providers: [{ id: "grok", accounts: [account] }] });
-	expect(publicSnapshot.providers[0].accounts[0].error).toBe(result.error);
-});
-
-test("unrecognized Grok authorization response remains private", async () => {
-	const result = await fetchGrokUsage({ accessToken: "fixture-grok-token" }, {
-		fetchFn: async () => Response.json({ error: "private information" }, { status: 403 }),
-	});
-	expect(result.error).toBe("Grok sign-in required");
 });

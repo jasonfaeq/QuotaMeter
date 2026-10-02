@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Release preflight checks for shuvquota
+ * Release preflight checks for quotameter
  * 
  * Validates package.json metadata and git state before publishing.
  * Run with: node scripts/preflight.js
@@ -20,10 +20,10 @@ const ROOT = join(__dirname, "..");
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const EXPECTED_NAME = "shuvquota";
+const EXPECTED_NAME = "quotameter";
 const REQUIRED_FILES = [
-	"shuvquota.js",
-	"shuvquota-server.js",
+	"quotameter.js",
+	"quotameter-server.js",
 	"lib/",
 	"web/",
 	"README.md",
@@ -36,7 +36,7 @@ const REQUIRED_DISK_PATHS = [
 	"web/styles.css",
 	"web/manifest.webmanifest",
 	"web/sw.js",
-	"web/icons/devil-phone.svg",
+	"web/icons/logo.svg",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ function buildChecks(pkg, { skipGit = false } = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function main() {
-	console.log("Preflight checks for shuvquota release\n");
+	console.log("Preflight checks for quotameter release\n");
 	
 	// Load package.json
 	let pkg;

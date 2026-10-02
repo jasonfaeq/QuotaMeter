@@ -3,7 +3,7 @@ import { DEFAULT_INTERVAL, createAppState, completeScan, renderFrame, runWatch }
 import { cellWidth } from "../lib/tui/width.js";
 
 const providers = [{ id: "codex", name: "Codex" }];
-const snapshot = status => ({ schemaVersion: 2, generatedAt: "2026-09-18T20:00:00Z",
+const snapshot = status => ({ schemaVersion: 1, generatedAt: "2026-09-18T20:00:00Z",
 	providers: [{ ...providers[0], accounts: [{ label: "work", status, email: null,
 		plan: null, windows: [] }] }] });
 

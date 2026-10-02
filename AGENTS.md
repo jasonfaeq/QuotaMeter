@@ -1,39 +1,34 @@
-# shuvquota agent guide
+# QuotaMeter agent guide
 
 ## Product and runtime
 
-`shuvquota` is a self-managed multi-account quota monitor for Codex, Claude, Grok,
-and Antigravity. Node.js >=18, ESM, **zero runtime dependencies**. Use Bun for tests
-and the commands in `package.json`. Work locally with `jj`; commit only after the
+QuotaMeter (`quotameter`) is a self-managed multi-account quota monitor for Codex,
+Claude, and Antigravity. Node.js >=18, ESM, **zero runtime dependencies**. Use Bun
+for tests and the commands in `package.json`. Use git; commit only after the
 relevant checks and full `bun test` pass.
-
-The migration plan is `PLAN-v2-tui-readonly.md`. Check its progress and
-`docs/v2-plan-review.md` before interpreting incomplete migration work. Actual
-validation evidence is in `docs/v2-validation.md`; model outcomes are in
-`MODEL-NOTES-v2.md`.
 
 ## Ownership boundary
 
-- Only independently enrolled shuvquota credentials are refreshable and writable.
-  A legacy row's location in a managed file does not prove independent enrollment.
+- Only credentials QuotaMeter enrolled itself are refreshable and writable.
+  An imported row's location in a managed file does not prove independent enrollment.
   Reauthentication creates the replacement owned session.
 - Harness and environment sources are read-only. Query a usable access token;
   return an enrollment-required error when it expires. Never refresh an external
   credential, including non-rotating Google sessions.
-- xAI rotates refresh tokens. Serialize refresh by credential identity; update all
+- OpenAI may rotate refresh tokens. Serialize refresh by credential identity; update all
   owned entries holding the previous refresh token. External stores are never
   fan-out targets. Detect known shared sessions rather than rotating one copy.
 - Google may omit a replacement refresh token; preserve the previous token.
 - Managed writes preserve unknown root metadata, drop `activeLabel`, use atomic
   replacement and mode `0600`. Malformed existing files must not be silently
   overwritten as empty stores.
-- There is no active identity or harness switch/sync operation in v2.
+- There is no active identity or harness switch/sync operation.
 
 ## Module boundaries
 
 | Concern | Location |
 | --- | --- |
-| Entry/config bootstrap | `shuvquota.js`, `lib/env.js` |
+| Entry/config bootstrap | `quotameter.js`, `lib/env.js` |
 | Command parsing/routing | `lib/cli.js` |
 | Owned account CRUD/persistence | `lib/credential-store.js` |
 | Provider registry/adapters | `lib/providers/` |
@@ -44,7 +39,7 @@ validation evidence is in `docs/v2-validation.md`; model outcomes are in
 | Width/layout/rendering (one-shot cards and list) | `lib/tui/{width,layout,render}.js` |
 | Watch shell (cell canvas, sidebar, detail pane) | `lib/tui/{canvas,shell}.js` |
 | Watch state / terminal lifecycle | `lib/tui/{app,terminal}.js` |
-| HTTP boundary / static serving | `lib/shuvquota-server.js` |
+| HTTP boundary / static serving | `lib/server.js`, `quotameter-server.js` |
 | Dashboard | `web/` |
 
 The entry point has no barrel re-exports. Tests import the relevant `lib/` module
@@ -63,7 +58,7 @@ Flights are keyed by provider identity/set and normalized label filter. Each
 provider has at most four concurrent account fetches. Late subscribers receive
 progress; callback failures must not abort the scan.
 
-Snapshot schema is v2. Account status is exactly **`ok`, `error`, or `loading`**.
+Snapshot schema version is 1. Account status is exactly **`ok`, `error`, or `loading`**.
 Low quota is successful data, not another status. Windows use
 **`percentRemaining` and `resetsAt`**. Derive severity in presentation code.
 
@@ -76,10 +71,10 @@ server loaders and error responses as well as the default loader.
 
 `renderStatic` and `renderCompact` return arrays of lines. Layout is pure and
 bounded by terminal cell width, including CJK/combining/emoji sequences. Test
-actual v2 snapshot fixtures across module boundaries; fixture-only unit tests can
+actual snapshot fixtures across module boundaries; fixture-only unit tests can
 hide schema drift. Terminal lifecycle changes require real PTY checks in addition
 to fake-stream unit tests: full-width final cells, stale redraw tails, process
-exit, raw mode, and paused stdin have all produced bugs during this migration.
+exit, raw mode, and paused stdin are all easy to break.
 
 ## Adding a provider
 
@@ -94,7 +89,7 @@ exit, raw mode, and paused stdin have all produced bugs during this migration.
 
 OAuth client secrets stay out of source. Antigravity uses
 `ANTIGRAVITY_CLIENT_ID` / `ANTIGRAVITY_CLIENT_SECRET` from the environment. See
-`docs/v2-oauth.md` when changing enrollment protocols or client assumptions.
+`docs/oauth.md` when changing enrollment protocols or client assumptions.
 
 ## Style and validation
 

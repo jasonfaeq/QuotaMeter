@@ -1,46 +1,97 @@
-# shuvquota
+<div align="center">
 
-A zero-dependency, self-managed quota monitor for **Codex, Claude, Grok, and
-Google AI Pro / Antigravity**. Keep multiple accounts, check their quotas together,
-or watch them in a responsive full-screen terminal view.
+<img src="web/icons/logo.svg" alt="QuotaMeter logo" width="120" height="120">
 
-Requires Node.js 18 or newer. Optional discovery from SQLite-backed harness stores
-requires a Node version with `node:sqlite`.
+# QuotaMeter
+
+**One dashboard for all your AI quotas.**<br>
+Monitor multiple **Codex**, **Claude**, and **Google AI Pro / Antigravity** accounts
+from your terminal or browser.
+
+[![CI](https://github.com/jasonfaeq/QuotaMeter/actions/workflows/ci.yml/badge.svg)](https://github.com/jasonfaeq/QuotaMeter/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Dependencies](https://img.shields.io/badge/runtime%20deps-0-brightgreen)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+<img src="web/icons/providers/openai.svg" alt="Codex" height="28">&nbsp;&nbsp;&nbsp;
+<img src="web/icons/providers/anthropic.svg" alt="Claude" height="28">&nbsp;&nbsp;&nbsp;
+<img src="web/icons/providers/antigravity.svg" alt="Antigravity" height="28">
+
+</div>
+
+---
+
+## Highlights
+
+- **Many accounts, one view.** Add as many accounts per provider as you like and
+  check them all in a single scan.
+- **Live terminal app.** `qm watch` gives you a full-screen view with provider tabs,
+  an account sidebar, reset countdowns, and an "upcoming resets" panel.
+- **Fits any terminal.** Layouts adapt to the terminal width, from wide monitors
+  down to narrow split panes. They handle CJK and emoji widths correctly and work
+  without colour.
+- **Web dashboard / PWA.** `quotameter-server` serves an installable dashboard
+  from the same quota engine.
+- **Private by default.** Emails are masked, and snapshots never contain tokens,
+  raw provider responses, or file paths.
+- **Safe with your other tools.** QuotaMeter only refreshes credentials it enrolled
+  itself. Codex CLI, Claude Code, OpenCode, and other tool stores are read-only.
+- **Zero runtime dependencies.** Plain Node.js 18+ and ESM.
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Watch mode](#watch-mode)
+- [Managed accounts](#managed-accounts)
+- [Provider configuration](#provider-configuration)
+- [Output and privacy](#output-and-privacy)
+- [Web dashboard / PWA](#web-dashboard--pwa)
+- [Development](#development)
 
 ## Install
 
 ```sh
-npm install -g shuvquota
+npm install -g quotameter
 # or
-bun add -g shuvquota
+bun add -g quotameter
 ```
 
-`shuvquota` is also installed as `cq` and `sq`.
+The CLI is installed as both `quotameter` and the short alias **`qm`**.
+
+> Requires Node.js 18 or newer. Optional discovery from SQLite-backed harness
+> stores requires a Node version with `node:sqlite`.
 
 ## Quick start
 
 ```sh
-cq codex add personal
-cq claude add work
-cq                         # one-shot quota view
-cq watch                   # live full-screen view
-cq codex work              # one provider/account
-cq --compact               # one line per metric
-cq --json                  # redacted v2 snapshot
+qm codex add personal      # sign in and enroll an account
+qm codex add work          # as many accounts per provider as you like
+qm claude add main
+qm antigravity add gemini
+
+qm                         # one-shot quota view
+qm watch                   # live full-screen view
+qm codex work              # one provider / account
+qm --compact               # one line per metric
+qm --json                  # redacted machine-readable snapshot
 ```
 
-Bare `cq` always runs once. Cards fill the available terminal width; short
-terminals try more, narrower columns, then fall back to one aligned line per
-quota window.
+Bare `qm` always runs once. Cards fill the available terminal width. On short
+terminals, QuotaMeter tries more, narrower columns first, then falls back to one
+aligned line per quota window.
 
-`cq watch` is a full-screen app: provider tabs across the top, an account
-sidebar with each account's lowest remaining quota, a detail pane for the
-selected account (limits with reset countdowns, then details), and a status
-bar. Press `u` to list the soonest upcoming resets across all accounts.
-Terminals under 72 columns drop the sidebar. Watch mode uses 24-bit colour;
-`--no-color` or `NO_COLOR` renders the same layout without colour.
+## Watch mode
 
-### Watch controls
+`qm watch` (aliases: `qm tui`, `qm -w`) opens a full-screen app with:
+
+- **Provider tabs** across the top
+- An **account sidebar** showing each account's lowest remaining quota
+- A **detail pane** for the selected account, with limits, reset countdowns, and details
+- A **status bar**, plus an **upcoming resets** list across all accounts (`u`)
+
+Terminals narrower than 72 columns drop the sidebar. Watch mode uses 24-bit
+colour; `--no-color` or `NO_COLOR` renders the same layout without colour.
 
 | Key | Action |
 | --- | --- |
@@ -50,157 +101,156 @@ Terminals under 72 columns drop the sidebar. Watch mode uses 24-bit colour;
 | `e` | Toggle email visibility |
 | `?` | Toggle help |
 | `1` | All providers |
-| `2`–`5` | Codex, Claude, Grok, Antigravity |
+| `2`–`4` | Codex, Claude, Antigravity |
 | `j`/`k`, arrows | Select the next/previous account |
 | PgUp/PgDn | Jump several accounts |
-| `+`/`-` | Increase/decrease refresh interval by 15 seconds |
+| `+`/`-` | Increase/decrease the refresh interval by 15 seconds |
 
-The default interval is 3 minutes (180 seconds); the minimum is 15. `cq tui` and `cq -w` are
-watch aliases. Use `--once` to force one-shot output. Redirected input or output
-falls back to a static view. A failed scan preserves the last completed view and
-shows a stale marker; individual account failures appear on their own cards.
+The default refresh interval is **3 minutes**; the minimum is 15 seconds. Use
+`--once` to force one-shot output. If input or output is redirected, QuotaMeter
+falls back to a static view. A failed scan keeps the last completed view and shows
+a stale marker. Failures on individual accounts appear on their own cards.
 
-When Anthropic rate-limits quota reads, Claude waits at least five minutes (or a
-longer `Retry-After`) before another request. The card shows the remaining wait.
-Grok quota access can differ between OAuth sessions for the same account. Native
-Grok Build sessions in `~/.grok/auth.json` (or `$GROK_HOME/auth.json`) are discovered
-read-only. If a managed session gets a Code CLI permission denial, shuvquota can
-query another unexpired session with the same verified account ID. It never
-refreshes or modifies the native session. The quota card marks that fallback.
+When Anthropic rate-limits quota reads, QuotaMeter waits at least five minutes
+(or longer, if the `Retry-After` header asks for it) before the next Claude
+request. The card shows the remaining wait.
 
 ## Managed accounts
 
 Every provider supports the same commands:
 
 ```sh
-cq <provider> add [label]
-cq <provider> reauth <label>
-cq <provider> rename <old> <new>
-cq <provider> remove <label>
-cq accounts
-cq sources
+qm <provider> add [label]        # enroll a new account via OAuth login
+qm <provider> reauth <label>     # replace a credential with a fresh login
+qm <provider> rename <old> <new>
+qm <provider> remove <label>
+qm accounts                      # labels and ownership status (never credentials)
+qm sources                       # every physical credential source
 ```
 
-`add` obtains a new OAuth session through provider login. `reauth` replaces the
-selected managed credential with a new login. Rename and remove affect only
-shuvquota's store.
+Rename and remove only affect QuotaMeter's own store:
 
 | Provider | Owned store |
 | --- | --- |
 | `codex` | `~/.codex-accounts.json` |
 | `claude` | `~/.claude-accounts.json` |
-| `grok` | `~/.grok-accounts.json` |
 | `antigravity` | `~/.antigravity-accounts.json` |
 
-Writes are atomic and use file mode `0600`. Old `activeLabel` metadata is ignored
-and removed on the next write. Legacy rows without independent-enrollment
-provenance need `reauth` before shuvquota may refresh them.
+Each label must be a different account. `add` refuses a sign-in that matches an
+account you already added, so switch accounts in your browser first.
+
+Writes are atomic and use file mode `0600`. Any `activeLabel` metadata is ignored
+and removed on the next write. QuotaMeter lists rows it did not enroll itself (for
+example, accounts that another tool wrote into these files) as `imported`. They
+stay read-only until you run `reauth` for them.
 
 ### Credential ownership
 
-Shuvquota refreshes independently enrolled credentials and persists rotated tokens
-only in its own stores. It never selects an active identity or writes credentials
-into Codex CLI, Claude Code, OpenCode, pi, Hermes, or other harness stores.
+QuotaMeter refreshes only the credentials it enrolled itself, and it saves rotated
+tokens only in its own stores. It never selects an active identity or writes
+credentials into Codex CLI, Claude Code, OpenCode, pi, or other tool stores.
 
-External stores and environment credentials are optional read-only quota sources.
-Their usable access tokens can be queried; expired external credentials require
-independent enrollment with `cq <provider> add`. Shuvquota does not refresh these
-external sessions. `cq sources` lists every physical source, including duplicates;
-quota views deduplicate account identities and prefer managed labels.
+External stores and environment credentials are optional **read-only** quota
+sources. QuotaMeter can query them while their access tokens are still valid, but
+it never refreshes these external sessions. When one expires, enroll the account
+with `qm <provider> add`. `qm sources` lists every physical source, including
+duplicates. Quota views deduplicate accounts by identity and prefer managed labels.
 
-If you have exactly one account for a provider but older sessions lack matching
-identity metadata, set `SHUVQUOTA_SINGLE_ACCOUNT_PROVIDERS=claude,antigravity` in
-`~/.shuvquota.env` (list only providers where this is true). Quota views select one
-session per listed provider, preferring an independently managed session or a
-usable access token over expired copies. `cq sources` still lists every source.
+<details>
+<summary><strong>Single-account providers</strong></summary>
+
+If you have exactly one account for a provider but some sessions lack matching
+identity metadata, set `QUOTAMETER_SINGLE_ACCOUNT_PROVIDERS=claude,antigravity` in
+`~/.quotameter.env`, listing only the providers where this is true. Quota views
+then select one session per listed provider, preferring a managed session or a
+valid access token over expired copies. `qm sources` still lists every source.
 Remove a provider from this setting when you add a second account.
 
-`cq accounts` prints labels and ownership status, never credentials.
-`cq sources --json` intentionally includes source paths; quota JSON and the web API
-do not.
+</details>
 
 ## Provider configuration
 
-Optional environment settings can be loaded from `~/.shuvquota.env`. Existing
-process environment values take precedence. Keep this file private.
+QuotaMeter can load optional environment settings from `~/.quotameter.env`.
+Variables already set in the process environment take precedence. Keep this file
+private.
 
-- **Codex / Claude:** use their provider login flows. Headless login presents a
-  URL and the callback/code instructions appropriate to that provider.
-- **Grok:** uses xAI OAuth PKCE. The known loopback client uses port `56121`.
-- **Antigravity:** configure `ANTIGRAVITY_CLIENT_ID` and
-  `ANTIGRAVITY_CLIENT_SECRET` for the installed-app flow. No client secret is
-  included in the package. The loopback redirect uses port `36742`.
-- **proxx:** optional read-only Codex quota source, configured through
-  `PROXX_BASE_URL` and `PROXX_AUTH_TOKEN`. It has no separate namespace or provider
-  snapshot. Remote failures retain local results.
-- **Grok display plan:** existing `~/.grok-plan-override.json` and `planOverride`
-  metadata remain display-only; edit them directly if needed.
+| Provider | Setup |
+| --- | --- |
+| **Codex / Claude** | Use the built-in provider login flows. Headless login shows a URL, plus callback or code instructions for that provider. |
+| **Antigravity** | Set `ANTIGRAVITY_CLIENT_ID` and `ANTIGRAVITY_CLIENT_SECRET` for the installed-app flow (no client secret ships in the package). The loopback redirect uses port `36742`. QuotaMeter reads OpenCode's `antigravity-accounts.json` from its default location, or from `ANTIGRAVITY_OPENCODE_ACCOUNTS_PATH`. |
+| **proxx** | Optional read-only Codex quota source, configured with `PROXX_BASE_URL` and `PROXX_AUTH_TOKEN`. Its accounts are merged into Codex; if the remote fails, local results are kept. |
 
-OAuth endpoints, source evidence, client assumptions, and unverified live checks
-are recorded in [the OAuth validation notes](docs/v2-oauth.md). A successful login
-does not guarantee every subscription has access to every provider service.
+[The OAuth notes](docs/oauth.md) describe the OAuth endpoints and client
+assumptions. A successful login does not guarantee that every subscription can
+access every provider service.
 
 ## Output and privacy
 
-Emails are masked by default. Use `--show-email` to reveal the email field in local
-terminal/JSON output. The web API always applies its public projection. ANSI and
-control characters from remote display text are sanitized.
-
 ```sh
-cq --json
-cq quota work --compact
-cq watch --interval 90
-cq --show-email
-cq --no-color
+qm --json                    # redacted snapshot
+qm quota work --compact
+qm watch --interval 90
+qm --show-email              # reveal emails locally
+qm --no-color                # NO_COLOR is honored too
 ```
 
-`NO_COLOR` is also honored. Reset clocks use Pacific Time (`America/Los_Angeles`),
-with PST/PDT as appropriate; machine timestamps are ISO 8601.
+- Emails are **masked by default**. `--show-email` reveals only the email field in
+  local terminal and JSON output. The web API always uses its public, masked
+  projection.
+- ANSI and control characters in remote display text are sanitized.
+- Reset times use your computer's time zone. To override it, set
+  `QUOTAMETER_TIME_ZONE` (for example `Europe/Berlin`) in `~/.quotameter.env`.
+  Machine-readable timestamps are ISO 8601.
 
-Completed quota snapshots use `schemaVersion: 2`, a `generatedAt` timestamp, and
-an ordered `providers` array. Accounts contain labels, optional email/plan,
-`status` (`ok`, `error`, or `loading`), windows, and optional extras. Window fields
-are `id`, `label`, `percentRemaining`, `resetsAt`, and optional `detail`.
-Quota snapshots do not contain raw provider responses, tokens, or source paths.
+<details>
+<summary><strong>Snapshot schema</strong></summary>
+
+Completed snapshots use `schemaVersion: 1`, a `generatedAt` timestamp, and an
+ordered `providers` array. Accounts contain a label, an optional email and plan,
+a `status` (`ok`, `error`, or `loading`), windows, and optional extras. Each window
+has `id`, `label`, `percentRemaining`, `resetsAt`, and an optional `detail`.
+
+Snapshots never contain raw provider responses, tokens, or source paths. Only
+`qm sources --json` includes source paths, on purpose.
+
+</details>
 
 ## Web dashboard / PWA
 
 ```sh
-shuvquota-server
-# development
-bun run app
+quotameter-server            # production
+bun run app                  # development
 ```
 
-The dashboard defaults to `http://127.0.0.1:4789`. It uses the same in-process
-quota loader as the CLI, with a public-data projection, a short cache, and
-single-flight requests. The host allowlist, security headers, and static-file
-path restrictions remain enabled. `/api/health` and `/api/quota` use schema v2.
+The dashboard runs at **http://127.0.0.1:4789** by default. Configure it with
+`QUOTAMETER_HOST`, `QUOTAMETER_PORT`, and `QUOTAMETER_ALLOWED_HOSTS`.
 
-## Migrating from v1
-
-v2 removes Factory, OpenCode Go, and Synthetic, the standalone proxx namespace,
-and harness-switching/synchronization commands (`switch`, `sync`, `set-plan`).
-Removed command forms exit 2 with a v1 migration hint.
-
-The v1 command surface remains available through **`npx shuvquota@1 …`**. The local
-`v1.1.25-final` tag preserves the pre-migration source.
-
-`--local`, `--native`, `--no-factory`, `--billing-day`, `--oauth`, `--manual`,
-`--dry-run`, `--no-browser`, `--base-url`, and `--token` are removed. Use the unified
-ownership policy and environment configuration described above. Reauthenticate
-legacy imported managed accounts before relying on automatic refresh.
-
-The JSON shape is breaking: consume the v2 `providers[].accounts[].windows[]`
-model, not v1's raw provider-keyed responses.
+It uses the same in-process quota loader as the CLI, with public (masked) data, a
+short cache, and a single shared request when several arrive at once. The host
+allowlist, security headers, and static-file path restrictions are always on.
+`/api/health` and `/api/quota` return schema version 1.
 
 ## Development
 
 ```sh
-bun test
-bun run preflight
-bun run release:pack
+bun test               # full test suite (fixture credentials, mocked HTTP)
+bun run preflight      # release checks
+bun run release:pack   # dry-run package
 ```
 
-Tests use fixture credentials and mocked HTTP calls. `lib/` contains the provider
-adapters, owned credential store, snapshot pipeline, CLI, server, and terminal UI;
-tests import modules directly. No runtime dependencies are required.
+| Path | Contents |
+| --- | --- |
+| `quotameter.js` | CLI entry point |
+| `quotameter-server.js` | Web dashboard entry point |
+| `lib/` | Provider adapters, owned credential store, snapshot pipeline, CLI, server |
+| `lib/tui/` | Width-aware layout, rendering, and the watch shell |
+| `web/` | Dashboard / PWA assets |
+| `test/` | Bun tests that import `lib/` modules directly |
+| `docs/` | OAuth and protocol notes |
+
+See [AGENTS.md](AGENTS.md) for architecture, ownership rules, and contribution
+guidelines.
+
+## License
+
+MIT © 2026 JasonFaeq. See [LICENSE](LICENSE).

@@ -9,14 +9,9 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
 	ANTIGRAVITY_REDIRECT_URI,
-	GROK_OAUTH_PLAN,
-	GROK_OAUTH_SCOPES,
-	GROK_REDIRECT_URI,
 	buildAntigravityAuthorizeUrl,
-	buildGrokAuthorizeUrl,
 	codexIdentityFromTokens,
 	exchangeCodexAuthorizationCode,
-	exchangeGrokAuthorizationCode,
 	getAntigravityOAuthClient,
 	listenForOAuthCallback,
 	loginProvider,
@@ -34,8 +29,6 @@ import {
 	JWT_PROFILE,
 	REDIRECT_URI,
 	TOKEN_URL,
-	XAI_OAUTH_CLIENT_ID,
-	XAI_OAUTH_TOKEN_URL,
 	ANTIGRAVITY_TOKEN_URL,
 } from "../lib/constants.js";
 import { runProviderOauthLogin } from "../lib/providers/_util.js";
@@ -97,12 +90,12 @@ describe("resolveProviderId / client config", () => {
 		expect(resolveProviderId("codex")).toBe("codex");
 		expect(resolveProviderId(" OpenAI ")).toBe("codex");
 		expect(resolveProviderId("anthropic")).toBe("claude");
-		expect(resolveProviderId("xai")).toBe("grok");
 		expect(resolveProviderId("google")).toBe("antigravity");
 	});
 
 	test("rejects unknown providers with a helpful message", () => {
-		expect(() => resolveProviderId("factory")).toThrow(/Unknown OAuth provider "factory".*codex, claude, grok, or antigravity/);
+		expect(() => resolveProviderId("factory")).toThrow(/Unknown OAuth provider "factory".*codex, claude, or antigravity/);
+		expect(() => resolveProviderId("grok")).toThrow(/Unknown OAuth provider "grok"/);
 		expect(() => resolveProviderId(undefined)).toThrow(/Unknown OAuth provider/);
 	});
 
@@ -126,24 +119,6 @@ describe("resolveProviderId / client config", () => {
 });
 
 describe("authorize URLs", () => {
-	test("Grok: pinned loopback redirect, public client, PKCE S256, state, nonce, generic plan", () => {
-		const url = new URL(buildGrokAuthorizeUrl({ challenge: "chal", state: "st", nonce: "nn" }));
-		expect(url.origin + url.pathname).toBe("https://auth.x.ai/oauth2/authorize");
-		expect(Object.fromEntries(url.searchParams)).toEqual({
-			response_type: "code",
-			client_id: XAI_OAUTH_CLIENT_ID,
-			redirect_uri: "http://127.0.0.1:56121/callback",
-			scope: GROK_OAUTH_SCOPES,
-			code_challenge: "chal",
-			code_challenge_method: "S256",
-			state: "st",
-			nonce: "nn",
-			plan: GROK_OAUTH_PLAN,
-		});
-		expect(GROK_REDIRECT_URI).toBe("http://127.0.0.1:56121/callback");
-		expect(GROK_OAUTH_SCOPES.split(" ")).toContain("offline_access");
-	});
-
 	test("Antigravity: env client id, localhost:36742 redirect, offline access with forced consent", () => {
 		const url = new URL(buildAntigravityAuthorizeUrl({ challenge: "chal", state: "st", clientId: "cid" }));
 		expect(url.origin + url.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
@@ -179,7 +154,7 @@ describe("parseOAuthCallbackInput", () => {
 
 describe("normalizeEnrollmentCredential", () => {
 	test("requires access and refresh tokens; the refresh error is actionable", () => {
-		expect(() => normalizeEnrollmentCredential("grok", { refreshToken: "r" })).toThrow(/grok login failed: .*no access token/);
+		expect(() => normalizeEnrollmentCredential("codex", { refreshToken: "r" })).toThrow(/codex login failed: .*no access token/);
 		expect(() => normalizeEnrollmentCredential("antigravity", { accessToken: "a" }))
 			.toThrow(/antigravity login failed: initial enrollment requires a refresh token.*offline access/);
 		expect(() => normalizeEnrollmentCredential("codex", { accessToken: "a", refreshToken: 5 })).toThrow(/refresh token/);
@@ -317,10 +292,26 @@ describe("loginProvider: claude (pasted code#state)", () => {
 		await expect(loginProvider("claude", {
 			fetch, openBrowser, prompt: async () => `${CLAUDE_OAUTH_REDIRECT_URI}?code=url-code&state=${expectedState}`,
 		})).resolves.toMatchObject({ enrollment: "independent" });
-		expect(JSON.parse(String(fetch.calls.at(-1).init.body)).code).toBe("url-code");
+		const exchanges = () => fetch.calls.filter(call => call.init.body);
+		expect(JSON.parse(String(exchanges().at(-1).init.body)).code).toBe("url-code");
 		await expect(loginProvider("claude", { fetch, openBrowser, prompt: async () => "bare-code" }))
 			.resolves.toMatchObject({ enrollment: "independent" });
-		expect(JSON.parse(String(fetch.calls.at(-1).init.body)).code).toBe("bare-code");
+		expect(JSON.parse(String(exchanges().at(-1).init.body)).code).toBe("bare-code");
+	});
+
+	test("captures the Anthropic account id and email so sessions for one account merge", async () => {
+		const fetch = fetchMock(url => (url === "https://api.anthropic.com/api/oauth/profile"
+			? json({ account: { uuid: "acct-uuid-1", email: "me@example.test" } })
+			: json(tokenBody)));
+		const result = await loginProvider("claude", { fetch, openBrowser() {}, prompt: async () => "bare-code" });
+		expect(result).toMatchObject({ accountId: "acct-uuid-1", email: "me@example.test", enrollment: "independent" });
+		const profileCall = fetch.calls.find(call => call.url.endsWith("/api/oauth/profile"));
+		expect(profileCall.init.headers.Authorization).toBe("Bearer sk-ant-oat-fixture");
+
+		const failing = fetchMock(url => (url.endsWith("/api/oauth/profile") ? json({}, 500) : json(tokenBody)));
+		const fallback = await loginProvider("claude", { fetch: failing, openBrowser() {}, prompt: async () => "bare-code" });
+		expect(fallback).not.toHaveProperty("accountId");
+		expect(fallback.enrollment).toBe("independent");
 	});
 
 	test("a pasted state that does not match the expected state is rejected without an exchange", async () => {
@@ -339,70 +330,47 @@ describe("loginProvider: claude (pasted code#state)", () => {
 	});
 });
 
-describe("loginProvider: grok", () => {
-	const access = jwt({ sub: "xai-user-1", email: "grok@example.test", tier: 2 });
-
-	test("pinned 127.0.0.1:56121 redirect, nonce, public client exchange, JWT profile", async () => {
-		const { seen, waitForCallback } = browserHook();
-		const fetch = fetchMock(url => {
-			expect(url).toBe(XAI_OAUTH_TOKEN_URL);
-			return json({ access_token: access, refresh_token: "rt-grok", expires_in: 3600 });
-		});
-		const result = await loginProvider("grok", { fetch, waitForCallback, now: () => NOW, headless: true, stdout: { write() {} } });
-
-		expect(seen.redirectUri).toBe(GROK_REDIRECT_URI);
-		expect(seen.url.searchParams.get("nonce")).toMatch(/^[0-9a-f]{64}$/);
-		expect(seen.url.searchParams.get("state")).toMatch(/^[0-9a-f]{64}$/);
-		expect(seen.url.searchParams.get("nonce")).not.toBe(seen.url.searchParams.get("state"));
-		const form = formOf(fetch.calls[0].init);
-		expect(form).toMatchObject({ grant_type: "authorization_code", code: "auth-code-1", redirect_uri: GROK_REDIRECT_URI, client_id: XAI_OAUTH_CLIENT_ID });
-		expect(form).not.toHaveProperty("client_secret");
-		expect(createHash("sha256").update(form.code_verifier).digest("base64url")).toBe(seen.url.searchParams.get("code_challenge"));
-
-		expect(result).toEqual({
-			accessToken: access, refreshToken: "rt-grok", expiresAt: NOW + 3_600_000,
-			email: "grok@example.test", accountId: "xai-user-1", enrollment: "independent",
-		});
-	});
+describe("token exchange transport (codex)", () => {
+	const access = jwt({ [JWT_CLAIM]: { chatgpt_account_id: "acct_123" } });
 
 	test("headless with no openBrowser writes the URL to ctx.stdout and never opens a browser", async () => {
 		const lines = [];
 		const fetch = fetchMock(() => json({ access_token: access, refresh_token: "rt", expires_in: 1 }));
-		await loginProvider("grok", { fetch, waitForCallback: async ({ state }) => ({ code: "c", state }), headless: true, stdout: { write: s => lines.push(s) } });
-		expect(lines.join("")).toMatch(/Open this URL in your browser[\s\S]*https:\/\/auth\.x\.ai\/oauth2\/authorize\?/);
+		await loginProvider("codex", { fetch, waitForCallback: async ({ state }) => ({ code: "c", state }), headless: true, stdout: { write: s => lines.push(s) } });
+		expect(lines.join("")).toMatch(/Open this URL in your browser[\s\S]*https:\/\/auth\.openai\.com\/oauth\/authorize\?/);
 	});
 
 	test("provider HTTP errors surface status and error code but never the request body", async () => {
 		const fetch = fetchMock(() => json({ error: "invalid_grant", error_description: "code expired" }, 400));
-		const err = await exchangeGrokAuthorizationCode("secret-code", "secret-verifier", { fetch }).catch(e => e);
+		const err = await exchangeCodexAuthorizationCode("secret-code", "secret-verifier", { fetch }).catch(e => e);
 		expect(err.message).toBe("Token exchange failed: HTTP 400 (invalid_grant: code expired)");
 		expect(err.message).not.toContain("secret-code");
 		expect(err.message).not.toContain("secret-verifier");
 		const html = fetchMock(() => new Response("<html>", { status: 502 }));
-		await expect(exchangeGrokAuthorizationCode("c", "v", { fetch: html })).rejects.toThrow("Token exchange failed: HTTP 502");
+		await expect(exchangeCodexAuthorizationCode("c", "v", { fetch: html })).rejects.toThrow("Token exchange failed: HTTP 502");
 		const garbage = fetchMock(() => new Response("not json", { status: 200 }));
-		await expect(exchangeGrokAuthorizationCode("c", "v", { fetch: garbage })).rejects.toThrow(/invalid JSON/);
+		await expect(exchangeCodexAuthorizationCode("c", "v", { fetch: garbage })).rejects.toThrow(/invalid JSON/);
 	});
 
 	test("token exchange honours timeoutMs and ctx.signal, cleaning up its abort listener", async () => {
 		const slow = hangingFetch();
-		await expect(exchangeGrokAuthorizationCode("c", "v", { fetch: slow, timeoutMs: 20 })).rejects.toThrow(/timed out after 0 seconds/);
+		await expect(exchangeCodexAuthorizationCode("c", "v", { fetch: slow, timeoutMs: 20 })).rejects.toThrow(/timed out after 0 seconds/);
 		expect(slow.calls[0].init.signal.aborted).toBe(true);
 
 		const controller = new AbortController();
-		const pending = exchangeGrokAuthorizationCode("c", "v", { fetch: hangingFetch(), signal: controller.signal, timeoutMs: 5000 });
+		const pending = exchangeCodexAuthorizationCode("c", "v", { fetch: hangingFetch(), signal: controller.signal, timeoutMs: 5000 });
 		controller.abort();
 		await expect(pending).rejects.toThrow(/cancelled/);
 
 		const preAborted = new AbortController();
 		preAborted.abort();
-		await expect(loginProvider("grok", { signal: preAborted.signal })).rejects.toThrow(/cancelled/);
+		await expect(loginProvider("codex", { signal: preAborted.signal })).rejects.toThrow(/cancelled/);
 	});
 
 	test("the provider registry helper accepts the result as an independent enrollment", async () => {
 		const fetch = fetchMock(() => json({ access_token: access, refresh_token: "rt", expires_in: 1 }));
-		const result = await runProviderOauthLogin("grok", { fetch, waitForCallback: async ({ state }) => ({ code: "c", state }), headless: true, stdout: { write() {} } });
-		expect(result).toMatchObject({ enrollment: "independent", accountId: "xai-user-1" });
+		const result = await runProviderOauthLogin("codex", { fetch, waitForCallback: async ({ state }) => ({ code: "c", state }), headless: true, stdout: { write() {} } });
+		expect(result).toMatchObject({ enrollment: "independent", accountId: "acct_123" });
 	});
 });
 

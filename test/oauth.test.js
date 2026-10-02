@@ -1,6 +1,6 @@
 /**
- * Legacy OAuth utilities tests migrated from shuvquota.test.js
- * Run with: bun test test/legacy/oauth.test.js
+ * OAuth utility tests.
+ * Run with: bun test test/oauth.test.js
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -13,12 +13,12 @@ import {
 	openBrowser,
 	startCallbackServer,
 	exchangeCodeForTokens,
-} from "../../lib/oauth.js";
+} from "../lib/oauth.js";
 
 import {
 	buildClaudeAuthUrl,
 	parseClaudeCodeState,
-} from "../../lib/claude-oauth.js";
+} from "../lib/claude-oauth.js";
 
 function createMockAccessToken(accountId, email = "test@example.com", planType = "plus") {
 	const header = { alg: "RS256", typ: "JWT" };

@@ -1,5 +1,5 @@
 /**
- * Tests for the provider-agnostic v2 quota scan pipeline.
+ * Tests for the provider-agnostic quota scan pipeline.
  * Run with: bun test test/quota.test.js
  */
 
@@ -25,9 +25,9 @@ function sleep(ms) {
 
 /**
  * A healthy payload every built-in normalizer understands: Codex reads
- * `rate_limit`, Claude reads `five_hour`, Grok reads `creditUsagePercent`, and
- * the generic fallback reads `windows`. Tests that assert one provider's
- * parsing build their own payload instead.
+ * `rate_limit`, Claude reads `five_hour`, and the generic fallback reads
+ * `windows`. Tests that assert one provider's parsing build their own payload
+ * instead.
  * @returns {object}
  */
 function okUsage() {
@@ -35,7 +35,6 @@ function okUsage() {
 		usage: {
 			rate_limit: { primary_window: { used_percent: 10, limit_window_seconds: 18000 } },
 			five_hour: { utilization: 10 },
-			creditUsagePercent: 10,
 			windows: [{ id: "session", label: "Session", used_percent: 10 }],
 		},
 	};
@@ -77,14 +76,13 @@ describe("loadSnapshot ordering", () => {
 		const snapshot = await loadSnapshot({
 			providers: [
 				makeProvider({ id: "antigravity", accounts: [{ label: "g" }] }),
-				makeProvider({ id: "grok", accounts: [{ label: "x" }] }),
 				makeProvider({ id: "claude", accounts: [{ label: "c" }] }),
 				makeProvider({ id: "codex", accounts: [{ label: "o" }] }),
 			],
 			now: NOW,
 		});
 		expect(snapshot.providers.map(provider => provider.id))
-			.toEqual(["codex", "claude", "grok", "antigravity"]);
+			.toEqual(["codex", "claude", "antigravity"]);
 	});
 
 	test("places unknown providers after the known ones, keeping input order", async () => {
@@ -114,17 +112,17 @@ describe("loadSnapshot ordering", () => {
 	test("names providers from the injected name, else the id", async () => {
 		const snapshot = await loadSnapshot({
 			providers: [
-				makeProvider({ id: "grok" }),
+				makeProvider({ id: "antigravity" }),
 				makeProvider({ id: "codex", name: "Codex CLI" }),
 			],
 			now: NOW,
 		});
-		expect(snapshot.providers.map(provider => provider.name)).toEqual(["Codex CLI", "SuperGrok"]);
+		expect(snapshot.providers.map(provider => provider.name)).toEqual(["Codex CLI", "Antigravity"]);
 	});
 });
 
 describe("loadSnapshot results", () => {
-	test("resolves a completed schemaVersion 2 snapshot", async () => {
+	test("resolves a completed schemaVersion 1 snapshot", async () => {
 		const snapshot = await loadSnapshot({
 			providers: [makeProvider({ id: "codex", accounts: [{ label: "work" }] })],
 			now: NOW,
@@ -163,15 +161,15 @@ describe("loadSnapshot results", () => {
 	test("uses the built-in normalizer for a known provider id", async () => {
 		const snapshot = await loadSnapshot({
 			providers: [makeProvider({
-				id: "grok",
-				accounts: [{ label: "main" }],
-				fetch: () => ({ tier: 5, usage: { creditUsagePercent: 25 } }),
+				id: "claude",
+				accounts: [{ label: "main", subscriptionType: "max", rateLimitTier: "default_claude_max_20x" }],
+				fetch: () => ({ usage: { five_hour: { utilization: 25 } } }),
 			})],
 			now: NOW,
 		});
 		const account = snapshot.providers[0].accounts[0];
-		expect(account.plan).toBe("SuperGrok Heavy");
-		expect(account.windows[0]).toMatchObject({ id: "credits", percentRemaining: 75 });
+		expect(account.plan).toBe("Max 20x");
+		expect(account.windows[0]).toMatchObject({ id: "session", percentRemaining: 75 });
 	});
 
 	test("accepts an async discover and an async fetch", async () => {
@@ -216,7 +214,7 @@ describe("loadSnapshot error isolation", () => {
 				makeProvider({
 					id: "codex",
 					discover: () => {
-						throw new Error("ENOENT /home/shuv/.codex/auth.json");
+						throw new Error("ENOENT /home/user/.codex/auth.json");
 					},
 				}),
 				makeProvider({ id: "claude", accounts: [{ label: "personal" }] }),
@@ -314,7 +312,7 @@ describe("loadSnapshot error isolation", () => {
 				normalize: () => ({
 					label: "work",
 					accessToken: "sk_" + "live_abcdefghijklmnopqrstuvwx",
-					credentialsPath: "/home/shuv/.codex/auth.json",
+					credentialsPath: "/home/user/.codex/auth.json",
 					accountId: "acct_12345",
 					status: "ok",
 					windows: [{ id: "session", percentRemaining: 50, refreshToken: "rt_secret_value" }],
@@ -328,7 +326,7 @@ describe("loadSnapshot error isolation", () => {
 		const json = JSON.stringify(snapshot);
 		expect(json).not.toContain("sk_live");
 		expect(json).not.toContain("acct_12345");
-		expect(json).not.toContain("/home/shuv");
+		expect(json).not.toContain("/home/user");
 		expect(json).not.toContain("rt_secret_value");
 	});
 });

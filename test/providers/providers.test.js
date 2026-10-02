@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { providers, getProvider } from "../../lib/providers/index.js";
 import { createCodexProvider } from "../../lib/providers/codex.js";
 import { createClaudeProvider } from "../../lib/providers/claude.js";
-import { createGrokProvider } from "../../lib/providers/grok.js";
 import { createAntigravityProvider } from "../../lib/providers/antigravity.js";
 import { loadSnapshot } from "../../lib/quota.js";
 import { MANAGED_STORE_FILENAMES } from "../../lib/credential-store.js";
@@ -18,7 +17,7 @@ const b64 = value => Buffer.from(JSON.stringify(value)).toString("base64url");
 const jwt = payload => `${b64({ alg: "none" })}.${b64(payload)}.sig`;
 
 let home;
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), "shuvquota-providers-")); });
+beforeEach(() => { home = mkdtempSync(join(tmpdir(), "quotameter-providers-")); });
 afterEach(() => { rmSync(home, { recursive: true, force: true }); });
 
 function writeStore(id, accounts) {
@@ -39,11 +38,12 @@ const pct = account => account.windows.map(w => [w.id, w.percentUsed, w.percentR
 
 describe("registry", () => {
 	test("fixed order and lookup", () => {
-		expect(providers.map(p => p.id)).toEqual(["codex", "claude", "grok", "antigravity"]);
+		expect(providers.map(p => p.id)).toEqual(["codex", "claude", "antigravity"]);
 		for (const p of providers) {
 			for (const fn of ["discoverAccounts", "discoverSources", "fetch", "normalize", "login"]) expect(typeof p[fn]).toBe("function");
 		}
-		expect(getProvider(" Grok ")?.id).toBe("grok");
+		expect(getProvider(" Antigravity ")?.id).toBe("antigravity");
+		expect(getProvider("grok")).toBeNull();
 		expect(getProvider("nope")).toBeNull();
 	});
 });
@@ -80,14 +80,10 @@ describe("pipeline + canonical normalizers", () => {
 		expect(account.extras).toContainEqual({ id: "source", label: "Source", value: "Read-only" });
 	});
 
-	test("grok + antigravity normalizers delegate to snapshot.js", async () => {
-		writeStore("grok", [{ label: "g", accountId: "xai-1", access: "g-at", refresh: "g-rt", expires: FRESH, enrollment: "independent" }]);
+	test("antigravity normalizer delegates to snapshot.js", async () => {
 		writeStore("antigravity", [{ label: "a", access: "a-at", refresh: "a-rt", expires: FRESH, email: "a@example.test", projectId: "p1", enrollment: "independent" }]);
-		const grok = createGrokProvider(deps({ fetchUsage: async () => ({ usage: { creditUsagePercent: 25, period: { start: "2026-01-05T00:00:00Z", end: "2026-01-12T00:00:00Z" } } }) }));
 		const antigravity = createAntigravityProvider(deps({ fetchUsage: async () => ({ usage: { groups: [{ id: "gemini", displayName: "Gemini", buckets: [{ bucketId: "5h", displayName: "5h", remainingFraction: 0.62, resetTime: "2026-01-10T05:00:00.000Z" }] }] } }) }));
-		const [g] = await scan(grok);
 		const [a] = await scan(antigravity);
-		expect(pct(g)[0]).toEqual(["credits", 25, 75]);
 		expect(a.status).toBe("ok");
 		expect(a.windows[0]).toMatchObject({ percentUsed: 38, percentRemaining: 62, resetsAt: "2026-01-10T05:00:00.000Z" });
 		expect(a.email).toBe("a@example.test");
@@ -119,6 +115,19 @@ describe("discovery", () => {
 		expect(accounts.map(a => a.label)).toEqual(["work", "imported", "other"]);
 	});
 
+	test("claude sessions for one Anthropic account merge, managed label winning", async () => {
+		writeStore("claude", [
+			{ label: "main", accountUuid: "uuid-1", oauthToken: "m-at", oauthRefreshToken: "m-rt", oauthExpiresAt: FRESH, enrollment: "independent" },
+		]);
+		const provider = createClaudeProvider(deps({ external: () => [
+			{ label: "claude-code", kind: "harness", source: "/x/.credentials.json", accountUuid: "uuid-1", access: "h-at", refresh: "h-rt", expires: FRESH },
+			{ label: "other", kind: "harness", source: "/x/auth.json", accountUuid: "uuid-2", access: "o-at", refresh: "o-rt", expires: FRESH },
+			{ label: "unknown", kind: "harness", source: "/y/auth.json", access: "u-at", refresh: "u-rt", expires: FRESH },
+		] }));
+		expect((await provider.discoverAccounts()).map(a => a.label)).toEqual(["main", "other", "unknown"]);
+		expect((await provider.discoverSources()).map(s => s.identityKey).slice(0, 3)).toEqual(["uuid-1", "uuid-1", "uuid-2"]);
+	});
+
 	test("claude sources expose a fingerprint, never the token", async () => {
 		const provider = createClaudeProvider(deps({ external: () => [{ label: "opencode", kind: "harness", source: "/x/auth.json", access: "secret-access", refresh: "secret-refresh", expires: null }] }));
 		const [source] = await provider.discoverSources();
@@ -129,24 +138,24 @@ describe("discovery", () => {
 
 describe("refresh discipline", () => {
 	test("two owned rows sharing a refresh token: one exchange, fan-out to both, no duplicate rotation", async () => {
-		writeStore("grok", [
-			{ label: "a", accountId: "xai-1", access: "old-at", refresh: "shared-rt", expires: NOW.getTime() - 1000, enrollment: "independent" },
-			{ label: "b", accountId: "xai-1", access: "old-at", refresh: "shared-rt", expires: NOW.getTime() - 1000, enrollment: "independent" },
+		writeStore("codex", [
+			{ label: "a", accountId: "acct-1", access: "old-at", refresh: "shared-rt", expires: NOW.getTime() - 1000, enrollment: "independent" },
+			{ label: "b", accountId: "acct-1", access: "old-at", refresh: "shared-rt", expires: NOW.getTime() - 1000, enrollment: "independent" },
 		]);
 		let calls = 0;
 		const used = [];
-		const provider = createGrokProvider(deps({
+		const provider = createCodexProvider(deps({
 			refresh: async () => { calls += 1; await new Promise(r => setTimeout(r, 5)); return { access: "new-at", refresh: "new-rt", expires: Date.now() + DAY }; },
-			fetchUsage: async account => { used.push(account.access); return { usage: { creditUsagePercent: 10 } }; },
+			fetchUsage: async account => { used.push(account.access); return { usage: { rate_limit: { primary_window: { used_percent: 10 } } } }; },
 		}));
 		const accounts = await provider.discoverAccounts();
-		const rows = readStore("grok");
+		const rows = readStore("codex");
 		const both = rows.map(row => accounts.find(a => a.label === row.label) ?? { ...accounts[0], label: row.label });
 		const results = await Promise.all(both.map(account => provider.fetch(account, { now: NOW })));
 		expect(results.every(r => r.usage)).toBe(true);
 		expect(calls).toBe(1);
 		expect(used).toEqual(["new-at", "new-at"]);
-		expect(readStore("grok").map(r => [r.label, r.access, r.refresh])).toEqual([["a", "new-at", "new-rt"], ["b", "new-at", "new-rt"]]);
+		expect(readStore("codex").map(r => [r.label, r.access, r.refresh])).toEqual([["a", "new-at", "new-rt"], ["b", "new-at", "new-rt"]]);
 	});
 
 	test("external credentials are never refreshed: hard expiry only, buffer ignored", async () => {
@@ -163,16 +172,16 @@ describe("refresh discipline", () => {
 		const accounts = await scan(provider);
 		const byLabel = Object.fromEntries(accounts.map(a => [a.label, a]));
 		expect(byLabel.expired.status).toBe("error");
-		expect(byLabel.expired.error).toContain("cq codex add");
+		expect(byLabel.expired.error).toContain("qm codex add");
 		expect(byLabel["in-buffer"].status).toBe("ok");
 		expect(fetched).toEqual(["in-buffer"]);
 		expect(refreshes).toBe(0);
 		expect(existsSync(join(home, ".codex-accounts.json"))).toBe(false);
 	});
 
-	test("legacy managed rows and rows sharing a refresh with an external session are never rotated or written", async () => {
+	test("imported managed rows and rows sharing a refresh with an external session are never rotated or written", async () => {
 		writeStore("claude", [
-			{ label: "legacy", oauthToken: "l-at", oauthRefreshToken: "l-rt", oauthExpiresAt: NOW.getTime() - 1 },
+			{ label: "imported", oauthToken: "l-at", oauthRefreshToken: "l-rt", oauthExpiresAt: NOW.getTime() - 1 },
 			{ label: "shared", oauthToken: "s-at", oauthRefreshToken: "harness-rt", oauthExpiresAt: NOW.getTime() - 1, enrollment: "independent" },
 		]);
 		const before = readFileSync(join(home, ".claude-accounts.json"), "utf-8");
@@ -183,10 +192,10 @@ describe("refresh discipline", () => {
 			fetchUsage: async () => ({ usage: { five_hour: { utilization: 1 } } }),
 		}));
 		const accounts = await provider.discoverAccounts();
-		const legacy = await provider.fetch(accounts.find(a => a.label === "legacy"), { now: NOW });
+		const imported = await provider.fetch(accounts.find(a => a.label === "imported"), { now: NOW });
 		const shared = await provider.fetch(accounts.find(a => a.label === "shared"), { now: NOW });
-		expect(legacy.error).toContain("cq claude add");
-		expect(shared.error).toMatch(/shared with an external or legacy session/);
+		expect(imported.error).toContain("qm claude add");
+		expect(shared.error).toMatch(/shared with an external or imported session/);
 		expect(refreshes).toBe(0);
 		expect(readFileSync(join(home, ".claude-accounts.json"), "utf-8")).toBe(before);
 	});
@@ -244,13 +253,13 @@ describe("login", () => {
 		const codexEntry = await createCodexProvider(deps({ loginProvider })).login({ label: "new" });
 		const claudeEntry = await createClaudeProvider(deps({ loginProvider })).login({ label: "new" });
 		expect(codexEntry).toEqual({ label: "new", access: "new-at", refresh: "new-rt", expires: credential.expiresAt, email: "me@example.test", accountId: "codex-id" });
-		expect(claudeEntry).toEqual({ label: "new", oauthToken: "new-at", oauthRefreshToken: "new-rt", oauthExpiresAt: credential.expiresAt, email: "me@example.test" });
+		expect(claudeEntry).toEqual({ label: "new", oauthToken: "new-at", oauthRefreshToken: "new-rt", oauthExpiresAt: credential.expiresAt, email: "me@example.test", accountUuid: "claude-id" });
 		expect(calls).toEqual([["codex", "new"], ["claude", "new"]]);
 		for (const file of Object.values(MANAGED_STORE_FILENAMES)) expect(existsSync(join(home, file))).toBe(false);
 	});
 
 	test("rejects non-independent or tokenless results", async () => {
-		await expect(createGrokProvider(deps({ loginProvider: async () => ({ ...credential, enrollment: "legacy" }) })).login({ label: "x" })).rejects.toThrow(/independent/);
+		await expect(createCodexProvider(deps({ loginProvider: async () => ({ ...credential, enrollment: "imported" }) })).login({ label: "x" })).rejects.toThrow(/independent/);
 		await expect(createAntigravityProvider(deps({ loginProvider: async () => null })).login({ label: "x" })).rejects.toThrow(/independent/);
 	});
 });
