@@ -75,20 +75,52 @@ describe("terminal lifecycle", () => {
 		terminal.start(); terminal.stop();
 		expect(input.paused).toBe(false);
 	});
-	test("erases the tail of every line when frames shrink", () => {
+	test("clears only for the first frame, then repaints changed rows in place", () => {
 		const { terminal, output } = fixture();
 		terminal.start();
-		terminal.write(["short", ""]);
-		expect(output.text).toContain("\x1b[H\x1b[2Jshort\r\n");
+		terminal.write(["one", "two"]);
+		expect(output.text).toContain("\x1b[?2026h\x1b[H\x1b[2J\x1b[1;1Hone\x1b[2;1Htwo\x1b[?2026l");
+		output.text = "";
+		terminal.write(["one", "TWO"]);
+		expect(output.text).toBe("\x1b[?2026h\x1b[2;1HTWO\x1b[0m\x1b[K\x1b[?2026l");
+		expect(output.text).not.toContain("\x1b[2J");
+		output.text = "";
+		terminal.write(["one", "TWO"]);
+		expect(output.text).toBe("");
+		terminal.stop();
+	});
+	test("erases the tail of rows that shrink or disappear", () => {
+		const { terminal, output } = fixture();
+		terminal.start();
+		terminal.write(["longer line", "gone"]);
+		output.text = "";
+		terminal.write(["short"]);
+		expect(output.text).toContain("\x1b[1;1Hshort\x1b[0m\x1b[K");
+		expect(output.text).toContain("\x1b[2;1H\x1b[0m\x1b[K");
 		terminal.stop();
 	});
 	test("never erases after a full-width final cell", () => {
 		const { terminal, output } = fixture();
 		terminal.start();
 		terminal.write(["x".repeat(80)]);
-		// Only the synchronized-update terminator follows the final cell.
-		expect(output.text.endsWith(`${"x".repeat(80)}\x1b[?2026l`)).toBe(true);
-		expect(output.text).toContain(`\x1b[?2026h\x1b[H\x1b[2J${"x".repeat(80)}`);
+		terminal.write(["y".repeat(80)]);
+		// Only the synchronized-update terminator follows each final cell.
+		expect(output.text).toContain(`${"x".repeat(80)}\x1b[?2026l`);
+		expect(output.text.endsWith(`\x1b[1;1H${"y".repeat(80)}\x1b[?2026l`)).toBe(true);
+		terminal.stop();
+	});
+	test("fully clears again after a resize or restart", () => {
+		const { terminal, output } = fixture();
+		terminal.start();
+		terminal.write(["a"]);
+		output.columns = 100;
+		output.text = "";
+		terminal.write(["a"]);
+		expect(output.text).toContain("\x1b[H\x1b[2J");
+		terminal.stop(); terminal.start();
+		output.text = "";
+		terminal.write(["a"]);
+		expect(output.text).toContain("\x1b[H\x1b[2J");
 		terminal.stop();
 	});
 });

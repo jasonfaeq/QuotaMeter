@@ -9,8 +9,8 @@ const snapshot = status => ({ schemaVersion: 1, generatedAt: "2026-09-18T20:00:0
 
 describe("watch app", () => {
 	test("refreshes every 3 minutes by default", () => {
-		expect(DEFAULT_INTERVAL).toBe(180);
-		expect(createAppState({ providers }).interval).toBe(180);
+		expect(DEFAULT_INTERVAL).toBe(30);
+		expect(createAppState({ providers }).interval).toBe(30);
 	});
 	test("completed and successful timestamps are distinct", () => {
 		const state = createAppState({ providers });

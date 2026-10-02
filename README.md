@@ -106,7 +106,7 @@ colour; `--no-color` or `NO_COLOR` renders the same layout without colour.
 | PgUp/PgDn | Jump several accounts |
 | `+`/`-` | Increase/decrease the refresh interval by 15 seconds |
 
-The default refresh interval is **3 minutes**; the minimum is 15 seconds. Use
+The default refresh interval is **30 seconds**; the minimum is 15 seconds. Use
 `--once` to force one-shot output. If input or output is redirected, QuotaMeter
 falls back to a static view. A failed scan keeps the last completed view and shows
 a stale marker. Failures on individual accounts appear on their own cards.
